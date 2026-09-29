@@ -7,7 +7,15 @@ import pytest
 
 from backend.app.config import DEFAULT_EMBEDDING_MODEL
 from backend.app.embeddings.encoder import EmbeddingEncoder, EmbeddingModelError
+from backend.app.embeddings.validator import (
+    DIFFERENT_PAIR,
+    SIMILAR_PAIR,
+    cosine_similarity,
+    run_semantic_sanity_check,
+    validate_embeddings,
+)
 from scripts.embed_chunks import generate_embeddings
+from scripts.validate_embeddings import validate_saved_embeddings
 
 
 @pytest.fixture(scope="module")
@@ -130,3 +138,160 @@ def test_saved_metadata_mapping_matches_embeddings(tmp_path: Path):
     assert loaded_metadata[0]["embedding_index"] == 0
     assert loaded_metadata[2]["chunk_id"] == "doc1_page3_chunk3"
     assert loaded_metadata[2]["embedding_index"] == 2
+
+
+# =========================================================================
+# Step 2.3: Embedding Validation Suite Tests
+# =========================================================================
+
+def test_valid_embedding_matrix_passes(encoder: EmbeddingEncoder):
+    """Step 2.3 Test 1: Valid 2D normalized embedding matrix passes all validation checks."""
+    texts = ["Valid document chunk 1", "Valid document chunk 2"]
+    embeddings = encoder.encode_documents(texts, normalize_embeddings=True)
+
+    stats = validate_embeddings(embeddings, expected_dim=384, check_normalized=True)
+    assert stats["num_vectors"] == 2
+    assert stats["dimension"] == 384
+    assert stats["nan_count"] == 0
+    assert stats["inf_count"] == 0
+    assert stats["zero_vector_count"] == 0
+    assert stats["is_normalized"] is True
+    assert np.isclose(stats["mean_norm"], 1.0, atol=1e-4)
+
+
+def test_wrong_dimension_fails():
+    """Step 2.3 Test 2: Embedding matrix with unexpected dimension raises ValueError."""
+    invalid_dim_matrix = np.ones((4, 128), dtype=np.float32)
+    with pytest.raises(ValueError) as exc_info:
+        validate_embeddings(invalid_dim_matrix, expected_dim=384)
+    assert "Expected embedding dimension of 384, got 128" in str(exc_info.value)
+
+
+def test_one_dimensional_input_fails():
+    """Step 2.3 Test 3: 1-dimensional array raises ValueError instead of silently broadcasting."""
+    one_dim_vector = np.ones((384,), dtype=np.float32)
+    with pytest.raises(ValueError) as exc_info:
+        validate_embeddings(one_dim_vector)
+    assert "Expected 2-dimensional embedding array" in str(exc_info.value)
+
+
+def test_nan_values_fail():
+    """Step 2.3 Test 4: Embedding matrix containing NaN values is rejected."""
+    matrix_with_nan = np.ones((3, 384), dtype=np.float32)
+    matrix_with_nan[1, 50] = np.nan
+    with pytest.raises(ValueError) as exc_info:
+        validate_embeddings(matrix_with_nan)
+    assert "NaN values" in str(exc_info.value)
+
+
+def test_infinity_values_fail():
+    """Step 2.3 Test 5: Embedding matrix containing Inf or -Inf values is rejected."""
+    matrix_with_inf = np.ones((3, 384), dtype=np.float32)
+    matrix_with_inf[0, 10] = np.inf
+    with pytest.raises(ValueError) as exc_info:
+        validate_embeddings(matrix_with_inf)
+    assert "infinite values" in str(exc_info.value)
+
+    matrix_with_neginf = np.ones((3, 384), dtype=np.float32)
+    matrix_with_neginf[2, 20] = -np.inf
+    with pytest.raises(ValueError) as exc_info:
+        validate_embeddings(matrix_with_neginf)
+    assert "infinite values" in str(exc_info.value)
+
+
+def test_zero_vector_fails():
+    """Step 2.3 Test 6: Embedding matrix containing zero vectors is rejected."""
+    matrix_with_zero = np.ones((3, 384), dtype=np.float32)
+    matrix_with_zero[1, :] = 0.0
+    with pytest.raises(ValueError) as exc_info:
+        validate_embeddings(matrix_with_zero)
+    assert "zero vector" in str(exc_info.value)
+
+
+def test_non_normalized_vectors_detected_when_expected():
+    """Step 2.3 Test 7: Non-normalized vectors fail when normalization is expected, pass when optional."""
+    unnormalized_matrix = np.ones((3, 384), dtype=np.float32) * 2.5
+    with pytest.raises(ValueError) as exc_info:
+        validate_embeddings(unnormalized_matrix, check_normalized=True)
+    assert "not unit L2 normalized" in str(exc_info.value)
+
+    stats = validate_embeddings(unnormalized_matrix, check_normalized=False)
+    assert stats["is_normalized"] is False
+    assert stats["num_vectors"] == 3
+
+
+def test_cosine_similarity_works(encoder: EmbeddingEncoder):
+    """Step 2.3 Test 8: Cosine similarity accurately compares identical, distinct, and opposite vectors."""
+    v1 = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    v2 = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    v_ortho = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+    v_opp = np.array([-1.0, 0.0, 0.0], dtype=np.float32)
+
+    assert np.isclose(cosine_similarity(v1, v2), 1.0)
+    assert np.isclose(cosine_similarity(v1, v_ortho), 0.0)
+    assert np.isclose(cosine_similarity(v1, v_opp), -1.0)
+
+    # Verify sanity check behavior with real embeddings
+    sanity_res = run_semantic_sanity_check(encoder)
+    assert sanity_res["passed"] is True
+    assert sanity_res["similar_score"] > sanity_res["different_score"]
+
+
+def test_cosine_similarity_dimension_mismatch_and_invalid_rejected():
+    """Step 2.3 Test 9: Cosine similarity rejects dimension mismatches, NaNs, and zero vectors."""
+    v_3d = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    v_2d = np.array([1.0, 0.0], dtype=np.float32)
+
+    with pytest.raises(ValueError) as exc_info:
+        cosine_similarity(v_3d, v_2d)
+    assert "Dimension mismatch" in str(exc_info.value)
+
+    v_zero = np.array([0.0, 0.0, 0.0], dtype=np.float32)
+    with pytest.raises(ValueError) as exc_info:
+        cosine_similarity(v_3d, v_zero)
+    assert "zero vector" in str(exc_info.value)
+
+    v_nan = np.array([np.nan, 0.0, 0.0], dtype=np.float32)
+    with pytest.raises(ValueError) as exc_info:
+        cosine_similarity(v_3d, v_nan)
+    assert "finite numbers" in str(exc_info.value)
+
+
+def test_metadata_count_mismatch_detected(tmp_path: Path):
+    """Step 2.3 Test 10: Metadata count mismatch with embedding count is detected and flagged."""
+    embeddings_file = tmp_path / "embeddings.npy"
+    metadata_file = tmp_path / "embedding_metadata.json"
+
+    # Create 3 valid normalized embeddings
+    raw_vecs = np.random.randn(3, 384).astype(np.float32)
+    norms = np.linalg.norm(raw_vecs, axis=1, keepdims=True)
+    normed_vecs = raw_vecs / norms
+    np.save(str(embeddings_file), normed_vecs)
+
+    # Create metadata with only 2 items (mismatch)
+    mismatched_metadata = [
+        {"embedding_index": 0, "chunk_id": "chunk_0"},
+        {"embedding_index": 1, "chunk_id": "chunk_1"},
+    ]
+    with open(metadata_file, "w", encoding="utf-8") as f:
+        json.dump(mismatched_metadata, f)
+
+    # Validation should fail (exit code 1)
+    status_mismatch = validate_saved_embeddings(
+        embeddings_file=embeddings_file,
+        metadata_file=metadata_file,
+        run_sanity_check=False,
+    )
+    assert status_mismatch == 1
+
+    # Fix metadata so counts match (3 items)
+    matched_metadata = mismatched_metadata + [{"embedding_index": 2, "chunk_id": "chunk_2"}]
+    with open(metadata_file, "w", encoding="utf-8") as f:
+        json.dump(matched_metadata, f)
+
+    status_match = validate_saved_embeddings(
+        embeddings_file=embeddings_file,
+        metadata_file=metadata_file,
+        run_sanity_check=False,
+    )
+    assert status_match == 0

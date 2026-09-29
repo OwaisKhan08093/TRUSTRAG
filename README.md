@@ -4,14 +4,15 @@ TrustRAG is a solo-developed Confidence-Aware Retrieval-Augmented Generation (RA
 
 ## Current Status
 
-**Step 2.2 — Document embedding generation completed.**
+**Step 2.3 — Embedding validation completed.**
 
 * [x] **Step 0**: Repository structure, configuration, test suite, and virtual environment setup.
 * [x] **Step 1**: Robust PyMuPDF PDF ingestion, conservative legal text cleaning, deterministic sliding-window chunking, and metadata-preserving JSON persistence.
 * [x] **Step 2.1**: Embedding model foundation with `EmbeddingEncoder` wrapper.
   * Model: `sentence-transformers/all-MiniLM-L6-v2` (dimension: 384).
 * [x] **Step 2.2**: Local document chunk embedding generation with batching and L2 normalization.
-* [ ] **Step 2.3 (Upcoming)**: FAISS vector indexing & similarity search.
+* [x] **Step 2.3**: Embedding validation suite and mathematical cosine-similarity sanity checks.
+* [ ] **Step 2.4 (Upcoming)**: FAISS vector indexing & similarity search.
 
 ## Current Pipeline
 
@@ -29,6 +30,8 @@ Metadata-Preserving JSON (data/processed/chunks.json)
 Local SentenceTransformers Encoding (384-d, L2-normalized)
  ↓
 Vector Artifacts (data/processed/embeddings.npy & embedding_metadata.json)
+ ↓
+Embedding Validation & Alignment Checks (Dimensionality, Norms, Sanitized Cosine)
 ```
 
 ## Installation
@@ -75,8 +78,24 @@ Encode chunk text into 384-dimensional dense embeddings locally:
 python scripts/embed_chunks.py
 ```
 
-### 3. Run Automated Tests
-Execute the full test suite across ingestion, chunking, and embeddings:
+### 3. Validate Embeddings Pipeline
+Verify the integrity of saved embeddings and metadata mapping:
+
+```bash
+python scripts/validate_embeddings.py
+```
+
+The validation suite rigorously verifies:
+* **Dimensionality**: Strictly 2D matrix matching expected dimensions (384).
+* **Finite Values**: Verifies all values are finite real numbers.
+* **NaN / Inf Detection**: Ensures zero NaN and infinite entries.
+* **Zero-Vector Detection**: Rejects empty/zero norm vectors.
+* **L2 Normalization**: Confirms vectors have unit norm ($||v|| \approx 1.0$).
+* **Metadata Alignment**: Verifies 1-to-1 correspondence between vector rows and chunk metadata entries.
+* **Semantic Sanity Check**: Mathematical cosine similarity check comparing similar and distinct concept pairs.
+
+### 4. Run Automated Tests
+Execute the full test suite across ingestion, chunking, embeddings, and validation:
 
 ```bash
 pytest
@@ -113,3 +132,4 @@ pytest
 ## Next Step
 
 **Next milestone: FAISS vector indexing & similarity search.**
+
