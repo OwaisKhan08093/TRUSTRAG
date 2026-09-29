@@ -295,3 +295,59 @@ def test_metadata_count_mismatch_detected(tmp_path: Path):
         run_sanity_check=False,
     )
     assert status_match == 0
+
+
+# =========================================================================
+# Milestone 4: Query Embedding Tests
+# =========================================================================
+
+def test_encode_query_valid(encoder: EmbeddingEncoder):
+    """Milestone 4 Test 1: encode_query returns a 1D (384,) array with unit norm."""
+    query = "What is the penalty for data breach?"
+    vector = encoder.encode_query(query, normalize_embeddings=True)
+
+    assert isinstance(vector, np.ndarray)
+    assert vector.ndim == 1
+    assert vector.shape == (384,)
+    assert vector.dtype == np.float32
+    assert np.isfinite(vector).all()
+    norm = np.linalg.norm(vector)
+    assert np.isclose(norm, 1.0, atol=1e-5)
+
+
+def test_encode_query_empty_or_whitespace_raises(encoder: EmbeddingEncoder):
+    """Milestone 4 Test 2: encode_query raises ValueError for empty or whitespace query."""
+    with pytest.raises(ValueError) as exc_info:
+        encoder.encode_query("")
+    assert "cannot be empty" in str(exc_info.value)
+
+    with pytest.raises(ValueError) as exc_info:
+        encoder.encode_query("   \n\t  ")
+    assert "cannot be empty" in str(exc_info.value)
+
+
+def test_encode_query_non_string_raises(encoder: EmbeddingEncoder):
+    """Milestone 4 Test 3: encode_query raises TypeError for non-string input."""
+    with pytest.raises(TypeError) as exc_info:
+        encoder.encode_query(12345)  # type: ignore
+    assert "Query must be a string" in str(exc_info.value)
+
+    with pytest.raises(TypeError):
+        encoder.encode_query(None)  # type: ignore
+
+
+def test_encode_query_deterministic(encoder: EmbeddingEncoder):
+    """Milestone 4 Test 4: encode_query produces deterministic embeddings for identical queries."""
+    q = "What are the duties of a Data Protection Officer?"
+    v1 = encoder.encode_query(q)
+    v2 = encoder.encode_query(q)
+    assert np.allclose(v1, v2, atol=1e-6)
+
+
+def test_encode_query_matches_encode_documents(encoder: EmbeddingEncoder):
+    """Milestone 4 Test 5: encode_query matches the output of encode_documents for the same query."""
+    q = "General obligations of data fiduciaries."
+    v_query = encoder.encode_query(q, normalize_embeddings=True)
+    v_docs = encoder.encode_documents([q], normalize_embeddings=True)[0]
+    assert np.allclose(v_query, v_docs, atol=1e-5)
+

@@ -103,3 +103,43 @@ class EmbeddingEncoder:
             raise EmbeddingModelError(
                 f"Failed to generate embeddings: {exc}"
             ) from exc
+
+    def encode_query(
+        self,
+        query: str,
+        normalize_embeddings: bool = True,
+    ) -> np.ndarray:
+        """Encode a single user query into a 1-dimensional dense vector embedding.
+
+        Args:
+            query: The user query string to encode.
+            normalize_embeddings: Whether to L2-normalize the output vector (default: True).
+
+        Returns:
+            A 1-dimensional NumPy array of shape (embedding_dimension,) with float32 dtype.
+
+        Raises:
+            TypeError: If query is not a string.
+            ValueError: If query is empty or contains only whitespace.
+            EmbeddingModelError: If model is not loaded or encoding fails.
+        """
+        if not isinstance(query, str):
+            raise TypeError(f"Query must be a string, got {type(query).__name__}.")
+
+        stripped_query = query.strip()
+        if not stripped_query:
+            raise ValueError("Query string cannot be empty or contain only whitespace.")
+
+        if self._model is None:
+            raise EmbeddingModelError("Model is not loaded.")
+
+        try:
+            embedding = self._model.encode(
+                stripped_query,
+                normalize_embeddings=normalize_embeddings,
+                show_progress_bar=False,
+                convert_to_numpy=True,
+            )
+            return np.asarray(embedding, dtype=np.float32).reshape(self.embedding_dimension)
+        except Exception as exc:
+            raise EmbeddingModelError(f"Failed to generate query embedding: {exc}") from exc
