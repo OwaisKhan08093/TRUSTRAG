@@ -1,13 +1,14 @@
 """Embedding encoder foundation using SentenceTransformers."""
 
-from typing import Optional
+from typing import Optional, Sequence
+import numpy as np
 from sentence_transformers import SentenceTransformer
 
-from backend.app.config import DEFAULT_EMBEDDING_MODEL
+from backend.app.config import DEFAULT_EMBEDDING_BATCH_SIZE, DEFAULT_EMBEDDING_MODEL
 
 
 class EmbeddingModelError(Exception):
-    """Raised when an embedding model fails to initialize or load."""
+    """Raised when an embedding model fails to initialize, load, or encode."""
     pass
 
 
@@ -61,3 +62,44 @@ class EmbeddingEncoder:
     def is_loaded(self) -> bool:
         """Verify whether the model is successfully loaded and ready."""
         return self._model is not None
+
+    def encode_documents(
+        self,
+        texts: Sequence[str],
+        batch_size: int = DEFAULT_EMBEDDING_BATCH_SIZE,
+        normalize_embeddings: bool = True,
+    ) -> np.ndarray:
+        """Encode a sequence of document texts into dense vector embeddings.
+
+        Args:
+            texts: Sequence of strings representing chunk or document texts.
+            batch_size: Number of texts to encode per batch (defaults to DEFAULT_EMBEDDING_BATCH_SIZE).
+            normalize_embeddings: Whether to L2-normalize the resulting vectors (defaults to True).
+
+        Returns:
+            A NumPy 2D array of shape (len(texts), embedding_dimension) with float32 dtype.
+
+        Raises:
+            EmbeddingModelError: If encoding fails or the model is not ready.
+        """
+        if self._model is None:
+            raise EmbeddingModelError("Model is not loaded.")
+
+        if not texts:
+            return np.empty((0, self.embedding_dimension), dtype=np.float32)
+
+        text_list = [str(t) for t in texts]
+
+        try:
+            embeddings = self._model.encode(
+                text_list,
+                batch_size=batch_size,
+                normalize_embeddings=normalize_embeddings,
+                show_progress_bar=False,
+                convert_to_numpy=True,
+            )
+            return np.asarray(embeddings, dtype=np.float32)
+        except Exception as exc:
+            raise EmbeddingModelError(
+                f"Failed to generate embeddings: {exc}"
+            ) from exc

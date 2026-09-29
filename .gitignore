@@ -13,6 +13,7 @@ __pycache__/
 
 # Data & Output
 data/processed/*.json
+data/processed/*.npy
 data/processed/*.csv
 !data/processed/.gitkeep
 data/raw/*

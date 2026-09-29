@@ -16,6 +16,9 @@ MIN_CHUNK_SIZE_WORDS = 20            # Minimum words to form a valid chunk
 
 # Embedding Defaults
 DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+DEFAULT_EMBEDDING_BATCH_SIZE = 32
+EMBEDDINGS_OUTPUT_FILE = PROCESSED_DATA_DIR / "embeddings.npy"
+EMBEDDING_METADATA_FILE = PROCESSED_DATA_DIR / "embedding_metadata.json"
 
 # Ensure necessary directories exist
 RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
