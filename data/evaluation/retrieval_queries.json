@@ -1,0 +1,26 @@
+[
+  {
+    "query": "What is the short title and commencement of the Act?",
+    "expected_document": "DPDP_Act_2023.pdf",
+    "expected_page": 1,
+    "expected_chunk_id": "DPDP_Act_2023_page1_chunk1"
+  },
+  {
+    "query": "What is the definition of Data Fiduciary and Data Principal?",
+    "expected_document": "DPDP_Act_2023.pdf",
+    "expected_page": 1,
+    "expected_chunk_id": "DPDP_Act_2023_page1_chunk2"
+  },
+  {
+    "query": "What are the requirements for notice and consent when requesting personal data?",
+    "expected_document": "DPDP_Act_2023.pdf",
+    "expected_page": 2,
+    "expected_chunk_id": "DPDP_Act_2023_page2_chunk3"
+  },
+  {
+    "query": "What are the rights of Data Principal regarding correction, erasure, and grievance redressal?",
+    "expected_document": "DPDP_Act_2023.pdf",
+    "expected_page": 3,
+    "expected_chunk_id": "DPDP_Act_2023_page3_chunk4"
+  }
+]
