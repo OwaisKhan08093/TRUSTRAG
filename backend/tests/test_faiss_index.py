@@ -107,3 +107,30 @@ def test_faiss_add_invalid_shape_rejected():
     three_dim = np.ones((2, 2, 384), dtype=np.float32)
     with pytest.raises(ValueError):
         index.add_embeddings(three_dim)
+
+
+# =========================================================================
+# Milestone 2: FAISS Persistence Tests
+# =========================================================================
+
+def test_faiss_save_and_load(tmp_path):
+    """Milestone 2 Test 1: Create index -> add vectors -> save -> load -> check equality."""
+    index = FaissVectorIndex(dimension=384)
+    vectors = _generate_normalized_vectors(7, 384)
+    index.add_embeddings(vectors)
+
+    save_path = tmp_path / "index.faiss"
+    index.save(save_path)
+    assert save_path.exists()
+
+    loaded_index = FaissVectorIndex.load(save_path)
+    assert loaded_index.dimension == 384
+    assert loaded_index.total_vectors == 7
+    assert loaded_index.underlying_index.ntotal == 7
+
+
+def test_faiss_load_non_existent_file_raises():
+    """Milestone 2 Test 2: Loading from a non-existent path raises FileNotFoundError."""
+    with pytest.raises(FileNotFoundError) as exc_info:
+        FaissVectorIndex.load("non_existent_path_to_index.faiss")
+    assert "not found" in str(exc_info.value)

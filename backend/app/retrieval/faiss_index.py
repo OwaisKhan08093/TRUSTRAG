@@ -79,3 +79,46 @@ class FaissVectorIndex:
             return self.total_vectors
         except Exception as exc:
             raise FaissIndexError(f"Failed to add embeddings to FAISS index: {exc}") from exc
+
+    def save(self, path: Union[str, Path]) -> None:
+        """Persist the FAISS index to disk using native binary serialization.
+
+        Args:
+            path: Destination file path for the .faiss index file.
+
+        Raises:
+            FaissIndexError: If writing the index fails.
+        """
+        dest_path = Path(path)
+        try:
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            faiss.write_index(self._index, str(dest_path))
+        except Exception as exc:
+            raise FaissIndexError(f"Failed to save FAISS index to '{dest_path}': {exc}") from exc
+
+    @classmethod
+    def load(cls, path: Union[str, Path]) -> "FaissVectorIndex":
+        """Load a persisted FAISS index from disk.
+
+        Args:
+            path: Source file path of the .faiss index file.
+
+        Returns:
+            A new FaissVectorIndex instance wrapping the loaded index.
+
+        Raises:
+            FileNotFoundError: If the file does not exist.
+            FaissIndexError: If reading or deserializing the index fails.
+        """
+        source_path = Path(path)
+        if not source_path.exists():
+            raise FileNotFoundError(f"FAISS index file not found at '{source_path}'.")
+
+        try:
+            raw_index = faiss.read_index(str(source_path))
+            dimension = int(raw_index.d)
+            instance = cls(dimension=dimension)
+            instance._index = raw_index
+            return instance
+        except Exception as exc:
+            raise FaissIndexError(f"Failed to load FAISS index from '{source_path}': {exc}") from exc

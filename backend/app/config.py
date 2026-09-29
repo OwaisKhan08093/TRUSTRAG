@@ -20,6 +20,9 @@ DEFAULT_EMBEDDING_BATCH_SIZE = 32
 EMBEDDINGS_OUTPUT_FILE = PROCESSED_DATA_DIR / "embeddings.npy"
 EMBEDDING_METADATA_FILE = PROCESSED_DATA_DIR / "embedding_metadata.json"
 
+# FAISS Retrieval Defaults
+FAISS_INDEX_FILE = PROCESSED_DATA_DIR / "index.faiss"
+
 # Ensure necessary directories exist
 RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
 PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
