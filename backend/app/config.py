@@ -14,6 +14,9 @@ DEFAULT_CHUNK_SIZE_WORDS = 600       # Target chunk size: 500-800 words
 DEFAULT_CHUNK_OVERLAP_WORDS = 120    # Target chunk overlap: 100-150 words
 MIN_CHUNK_SIZE_WORDS = 20            # Minimum words to form a valid chunk
 
+# Embedding Defaults
+DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+
 # Ensure necessary directories exist
 RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
 PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)

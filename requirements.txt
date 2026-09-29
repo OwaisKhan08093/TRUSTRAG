@@ -1,5 +1,6 @@
-# Minimal dependencies for Step 0 + Step 1 (Ingestion & Chunking)
+# Minimal dependencies for Step 0 + Step 1 + Step 2.1
 pymupdf>=1.23.0
 numpy>=1.24.0
 pandas>=2.0.0
 pytest>=7.0.0
+sentence-transformers>=3.0.0

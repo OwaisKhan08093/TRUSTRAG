@@ -4,11 +4,13 @@ TrustRAG is a solo-developed Confidence-Aware Retrieval-Augmented Generation (RA
 
 ## Current Status
 
-**Step 0 + Step 1 completed.**
+**Step 2.1 — Embedding model foundation completed.**
 
 * [x] **Step 0**: Repository structure, configuration, test suite, and virtual environment setup.
 * [x] **Step 1**: Robust PyMuPDF PDF ingestion, conservative legal text cleaning, deterministic sliding-window chunking, and metadata-preserving JSON persistence.
-* [ ] **Step 2 (Upcoming)**: Embedding generation + FAISS indexing.
+* [x] **Step 2.1**: Embedding model foundation with `EmbeddingEncoder` wrapper.
+  * Model: `sentence-transformers/all-MiniLM-L6-v2` (dimension: 384).
+* [ ] **Step 2.2 (Upcoming)**: Document embedding generation & FAISS vector indexing.
 
 ## Current Pipeline
 
