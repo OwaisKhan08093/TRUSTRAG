@@ -134,3 +134,45 @@ def test_faiss_load_non_existent_file_raises():
     with pytest.raises(FileNotFoundError) as exc_info:
         FaissVectorIndex.load("non_existent_path_to_index.faiss")
     assert "not found" in str(exc_info.value)
+
+
+# =========================================================================
+# Milestone 3: FAISS Index Builder Tests
+# =========================================================================
+
+def test_build_faiss_index_script(tmp_path):
+    """Milestone 3 Test 1: build_index loads embeddings, validates, and creates valid .faiss file."""
+    from scripts.build_faiss_index import build_index
+
+    emb_file = tmp_path / "embeddings.npy"
+    index_file = tmp_path / "index.faiss"
+
+    vectors = _generate_normalized_vectors(4, 384)
+    np.save(str(emb_file), vectors)
+
+    exit_code = build_index(
+        embeddings_file=emb_file,
+        index_file=index_file,
+        expected_dim=384,
+    )
+    assert exit_code == 0
+    assert index_file.exists()
+
+    loaded = FaissVectorIndex.load(index_file)
+    assert loaded.dimension == 384
+    assert loaded.total_vectors == 4
+
+
+def test_build_faiss_index_missing_embeddings_fails(tmp_path):
+    """Milestone 3 Test 2: build_index exits with non-zero when embeddings are missing."""
+    from scripts.build_faiss_index import build_index
+
+    non_existent = tmp_path / "missing_embeddings.npy"
+    index_file = tmp_path / "index.faiss"
+
+    exit_code = build_index(
+        embeddings_file=non_existent,
+        index_file=index_file,
+    )
+    assert exit_code == 1
+    assert not index_file.exists()
