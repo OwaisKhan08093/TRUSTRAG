@@ -1,0 +1,31 @@
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Data & Output
+data/processed/*.json
+data/processed/*.csv
+!data/processed/.gitkeep
+data/raw/*
+!data/raw/.gitkeep
+!data/raw/sample.pdf
+!data/raw/DPDP_Act_2023.pdf
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Models
+models/*
+!models/.gitkeep
