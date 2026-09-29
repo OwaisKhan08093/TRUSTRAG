@@ -122,3 +122,75 @@ class FaissVectorIndex:
             return instance
         except Exception as exc:
             raise FaissIndexError(f"Failed to load FAISS index from '{source_path}': {exc}") from exc
+
+    def search(
+        self,
+        query_embedding: np.ndarray,
+        top_k: int = 5,
+    ) -> list[dict[str, Union[int, float]]]:
+        """Perform nearest-neighbor inner product similarity search against the indexed vectors.
+
+        Args:
+            query_embedding: 1D (dimension,) or 2D (1, dimension) numpy array.
+            top_k: Number of highest-similarity results to return (must be >= 1).
+
+        Returns:
+            List of dictionaries containing 'index' (int) and 'score' (float), sorted descending.
+
+        Raises:
+            TypeError: If query_embedding is not a numpy array with numeric dtype.
+            ValueError: If query_embedding is invalid, dimensions mismatch, or top_k < 1.
+            FaissIndexError: If search execution fails.
+        """
+        if not isinstance(query_embedding, np.ndarray):
+            raise TypeError(f"query_embedding must be a numpy.ndarray, got {type(query_embedding).__name__}.")
+
+        if not np.issubdtype(query_embedding.dtype, np.number):
+            raise TypeError(f"query_embedding must have a numeric dtype, got {query_embedding.dtype}.")
+
+        # Handle 1D or 1xD 2D inputs
+        q_vec = query_embedding.squeeze()
+        if q_vec.ndim != 1:
+            raise ValueError(
+                f"Query embedding must be 1-dimensional (or 1xD). Got shape {query_embedding.shape}."
+            )
+
+        if q_vec.shape[0] != self._dimension:
+            raise ValueError(
+                f"Query dimension ({q_vec.shape[0]}) does not match index dimension ({self._dimension})."
+            )
+
+        if not np.all(np.isfinite(q_vec)):
+            raise ValueError("Query embedding contains non-finite values (NaN or Inf).")
+
+        norm = float(np.linalg.norm(q_vec))
+        if np.isclose(norm, 0.0, atol=1e-7):
+            raise ValueError("Query embedding cannot be a zero vector.")
+
+        if not isinstance(top_k, int) or top_k < 1:
+            raise ValueError(f"top_k must be a positive integer >= 1, got {top_k}.")
+
+        # If index has no vectors, return empty results
+        if self.total_vectors == 0:
+            return []
+
+        # Bound top_k by total indexed vectors
+        effective_k = min(top_k, self.total_vectors)
+
+        try:
+            query_2d = np.ascontiguousarray(q_vec.reshape(1, self._dimension), dtype=np.float32)
+            distances, indices = self._index.search(query_2d, effective_k)
+
+            results: list[dict[str, Union[int, float]]] = []
+            for score, idx in zip(distances[0], indices[0]):
+                # FAISS returns -1 for unassigned neighbors
+                if idx >= 0:
+                    results.append({
+                        "index": int(idx),
+                        "score": float(score),
+                    })
+
+            return results
+        except Exception as exc:
+            raise FaissIndexError(f"FAISS search execution failed: {exc}") from exc
+

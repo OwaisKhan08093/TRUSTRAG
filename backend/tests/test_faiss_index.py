@@ -176,3 +176,88 @@ def test_build_faiss_index_missing_embeddings_fails(tmp_path):
     )
     assert exit_code == 1
     assert not index_file.exists()
+
+
+# =========================================================================
+# Milestone 5: FAISS Similarity Search Tests
+# =========================================================================
+
+def test_faiss_search_accuracy_and_ranking():
+    """Milestone 5 Test 1: Search returns correct nearest vectors in descending order of similarity."""
+    index = FaissVectorIndex(dimension=3)
+    # 3 orthogonal unit vectors
+    v0 = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+    v1 = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+    v2 = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+    matrix = np.vstack([v0, v1, v2])
+    index.add_embeddings(matrix)
+
+    # Query close to v0
+    query = np.array([0.9, 0.1, 0.0], dtype=np.float32)
+    query_normed = query / np.linalg.norm(query)
+
+    results = index.search(query_normed, top_k=3)
+    assert len(results) == 3
+    assert results[0]["index"] == 0
+    assert results[0]["score"] > results[1]["score"]
+    assert results[1]["score"] >= results[2]["score"]
+    assert np.isclose(results[0]["score"], float(np.dot(query_normed, v0)), atol=1e-5)
+
+
+def test_faiss_search_empty_index_returns_empty_list():
+    """Milestone 5 Test 2: Search on an empty index returns an empty list without error."""
+    index = FaissVectorIndex(dimension=384)
+    query = np.ones((384,), dtype=np.float32) / np.sqrt(384)
+    results = index.search(query, top_k=5)
+    assert results == []
+
+
+def test_faiss_search_top_k_larger_than_total():
+    """Milestone 5 Test 3: Search never returns more results than indexed vectors."""
+    index = FaissVectorIndex(dimension=384)
+    vectors = _generate_normalized_vectors(2, 384)
+    index.add_embeddings(vectors)
+
+    query = vectors[0]
+    results = index.search(query, top_k=10)
+    assert len(results) == 2
+
+
+def test_faiss_search_invalid_top_k_raises():
+    """Milestone 5 Test 4: Non-positive or invalid top_k raises ValueError."""
+    index = FaissVectorIndex(dimension=384)
+    query = np.ones((384,), dtype=np.float32) / np.sqrt(384)
+
+    with pytest.raises(ValueError) as exc_info:
+        index.search(query, top_k=0)
+    assert "positive integer" in str(exc_info.value)
+
+    with pytest.raises(ValueError):
+        index.search(query, top_k=-2)
+
+
+def test_faiss_search_invalid_query_raises():
+    """Milestone 5 Test 5: Query with wrong dimension, NaN, Inf, or zero-norm is rejected."""
+    index = FaissVectorIndex(dimension=384)
+    vectors = _generate_normalized_vectors(3, 384)
+    index.add_embeddings(vectors)
+
+    # Wrong dimension
+    wrong_dim_query = np.ones((128,), dtype=np.float32)
+    with pytest.raises(ValueError) as exc_info:
+        index.search(wrong_dim_query)
+    assert "Query dimension (128) does not match" in str(exc_info.value)
+
+    # NaN query
+    nan_query = np.ones((384,), dtype=np.float32)
+    nan_query[5] = np.nan
+    with pytest.raises(ValueError) as exc_info:
+        index.search(nan_query)
+    assert "non-finite" in str(exc_info.value)
+
+    # Zero vector query
+    zero_query = np.zeros((384,), dtype=np.float32)
+    with pytest.raises(ValueError) as exc_info:
+        index.search(zero_query)
+    assert "zero vector" in str(exc_info.value)
+
