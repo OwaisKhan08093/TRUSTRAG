@@ -22,6 +22,9 @@ EMBEDDING_METADATA_FILE = PROCESSED_DATA_DIR / "embedding_metadata.json"
 
 # FAISS Retrieval Defaults
 FAISS_INDEX_FILE = PROCESSED_DATA_DIR / "index.faiss"
+DEFAULT_TOP_K = 5
+MAX_TOP_K = 20
+DEFAULT_SIMILARITY_THRESHOLD = 0.0
 
 # Ensure necessary directories exist
 RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)

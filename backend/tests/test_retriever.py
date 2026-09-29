@@ -146,3 +146,67 @@ def test_retriever_integration_real_data(encoder: EmbeddingEncoder):
         assert "chunk_id" in results[0]
         assert "text" in results[0]
         assert -1.0 <= results[0]["score"] <= 1.0
+
+
+# =========================================================================
+# Milestone 8: Retrieval Configuration and Filtering Tests
+# =========================================================================
+
+def test_retriever_default_top_k(mock_retriever_setup: VectorRetriever):
+    """Milestone 8 Test 1: Calling retrieve without top_k uses configured default_top_k."""
+    retriever = mock_retriever_setup
+    assert retriever.default_top_k == 5
+    results = retriever.retrieve("penalties for non-compliance")
+    # Total available is 3, so effective results is 3
+    assert len(results) == 3
+
+
+def test_retriever_max_top_k_enforcement(mock_retriever_setup: VectorRetriever):
+    """Milestone 8 Test 2: Requesting top_k exceeding max_top_k raises ValueError."""
+    retriever = mock_retriever_setup
+    with pytest.raises(ValueError) as exc_info:
+        retriever.retrieve("penalties", top_k=25)
+    assert "exceeds configured maximum limit" in str(exc_info.value)
+
+
+def test_retriever_score_threshold_filtering(mock_retriever_setup: VectorRetriever):
+    """Milestone 8 Test 3: score_threshold filters out lower scoring chunks and re-indexes rank."""
+    retriever = mock_retriever_setup
+
+    # High threshold should only keep the closest match
+    results_filtered = retriever.retrieve(
+        "Personal data breach unauthorized processing",
+        top_k=3,
+        score_threshold=0.6,
+    )
+    assert len(results_filtered) >= 1
+    for r in results_filtered:
+        assert r["score"] >= 0.6
+
+    # Verify ranks are sequential 1..N
+    ranks = [r["rank"] for r in results_filtered]
+    assert ranks == list(range(1, len(results_filtered) + 1))
+
+
+def test_retriever_score_threshold_no_matches(mock_retriever_setup: VectorRetriever):
+    """Milestone 8 Test 4: When no chunks satisfy score_threshold, returns empty list."""
+    retriever = mock_retriever_setup
+    results = retriever.retrieve(
+        "Personal data breach",
+        top_k=3,
+        score_threshold=0.999,  # Unreasonably high threshold
+    )
+    assert results == []
+
+
+def test_retriever_invalid_threshold_raises(mock_retriever_setup: VectorRetriever):
+    """Milestone 8 Test 5: Out of bounds score_threshold raises ValueError."""
+    retriever = mock_retriever_setup
+
+    with pytest.raises(ValueError) as exc_info:
+        retriever.retrieve("data", score_threshold=1.5)
+    assert "between -1.0 and 1.0" in str(exc_info.value)
+
+    with pytest.raises(ValueError):
+        retriever.retrieve("data", score_threshold=-1.5)
+
