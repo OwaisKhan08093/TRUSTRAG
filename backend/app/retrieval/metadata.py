@@ -164,7 +164,7 @@ class ChunkMetadataResolver:
         return dict(self._chunks_by_id[chunk_id])
 
     def resolve_indices(self, indices: Sequence[int]) -> List[Dict[str, Any]]:
-        """Resolve a sequence of FAISS index positions preserving order.
+        """Resolve a sequence of FAISS or BM25 index positions preserving order.
 
         Args:
             indices: Sequence of integer indices.
@@ -173,3 +173,24 @@ class ChunkMetadataResolver:
             List of resolved chunk metadata dictionaries.
         """
         return [self.resolve_index(idx) for idx in indices]
+
+    def resolve_chunk_id(self, chunk_id: str) -> Dict[str, Any]:
+        """Resolve a specific chunk ID directly to its complete chunk metadata.
+
+        Args:
+            chunk_id: String chunk identifier.
+
+        Returns:
+            Dictionary with chunk_id, document_id, document_name, page_start, page_end, text.
+
+        Raises:
+            TypeError: If chunk_id is not a string.
+            KeyError: If chunk_id is not registered in the chunk dataset.
+        """
+        if not isinstance(chunk_id, str):
+            raise TypeError(f"chunk_id must be a string, got {type(chunk_id).__name__}.")
+
+        if chunk_id not in self._chunks_by_id:
+            raise KeyError(f"Chunk ID '{chunk_id}' not found in metadata registry.")
+
+        return dict(self._chunks_by_id[chunk_id])
