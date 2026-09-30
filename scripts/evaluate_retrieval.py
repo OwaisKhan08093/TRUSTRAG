@@ -1,9 +1,9 @@
-"""CLI and evaluation utility for measuring vector retrieval performance on test queries."""
+"""CLI and evaluation utility for measuring dense, sparse, and hybrid retrieval performance."""
 
 import argparse
 import json
-import sys
 from pathlib import Path
+import sys
 from typing import Any, Dict, List, Optional, Union
 
 # Add project root to sys.path so backend imports work seamlessly
@@ -16,11 +16,9 @@ from backend.app.config import (
     EMBEDDING_METADATA_FILE,
     FAISS_INDEX_FILE,
 )
-from backend.app.embeddings.encoder import EmbeddingEncoder
-from backend.app.retrieval.faiss_index import FaissVectorIndex
-from backend.app.retrieval.metadata import ChunkMetadataResolver
+from backend.app.retrieval.bm25_retriever import BM25Retriever
+from backend.app.retrieval.hybrid_retriever import HybridRetriever
 from backend.app.retrieval.retriever import VectorRetriever
-
 
 DEFAULT_EVALUATION_FILE = PROJECT_ROOT / "data" / "evaluation" / "retrieval_queries.json"
 
@@ -71,34 +69,21 @@ def compute_metrics(
     }
 
 
-def evaluate_retrieval(
-    queries_file: Union[str, Path] = DEFAULT_EVALUATION_FILE,
-    retriever: Optional[VectorRetriever] = None,
+def evaluate_retriever(
+    retriever: Any,
+    queries: List[Dict[str, Any]],
     top_k: int = 5,
 ) -> Dict[str, Any]:
-    """Run retrieval evaluation against a query dataset and compute metrics.
+    """Evaluate a single retriever against a loaded query list.
 
     Args:
-        queries_file: Path to evaluation JSON file.
-        retriever: Optional pre-configured VectorRetriever instance.
-        top_k: Number of chunks to retrieve per query (default: 5).
+        retriever: VectorRetriever, BM25Retriever, or HybridRetriever.
+        queries: List of query dictionaries with 'query' and expected targets.
+        top_k: Top-K chunks to retrieve per query.
 
     Returns:
-        Dictionary containing evaluation summary, query details, and metrics.
+        Dictionary with metrics and individual query records.
     """
-    path = Path(queries_file)
-    if not path.exists():
-        raise FileNotFoundError(f"Evaluation queries file not found at '{path}'.")
-
-    with open(path, "r", encoding="utf-8") as f:
-        queries = json.load(f)
-
-    if not isinstance(queries, list) or len(queries) == 0:
-        raise ValueError(f"Evaluation file '{path}' is empty or not a valid JSON list.")
-
-    if retriever is None:
-        retriever = VectorRetriever()
-
     eval_records: List[Dict[str, Any]] = []
 
     for item in queries:
@@ -130,12 +115,93 @@ def evaluate_retrieval(
         })
 
     metrics = compute_metrics(eval_records)
+    return {
+        "metrics": metrics,
+        "records": eval_records,
+    }
+
+
+def evaluate_retrieval(
+    queries_file: Union[str, Path] = DEFAULT_EVALUATION_FILE,
+    retriever: Optional[Any] = None,
+    top_k: int = 5,
+) -> Dict[str, Any]:
+    """Run retrieval evaluation against a query dataset and compute metrics.
+
+    Args:
+        queries_file: Path to evaluation JSON file.
+        retriever: Optional retriever instance (defaults to VectorRetriever).
+        top_k: Number of chunks to retrieve per query (default: 5).
+
+    Returns:
+        Dictionary containing evaluation summary, query details, and metrics.
+    """
+    path = Path(queries_file)
+    if not path.exists():
+        raise FileNotFoundError(f"Evaluation queries file not found at '{path}'.")
+
+    with open(path, "r", encoding="utf-8") as f:
+        queries = json.load(f)
+
+    if not isinstance(queries, list) or len(queries) == 0:
+        raise ValueError(f"Evaluation file '{path}' is empty or not a valid JSON list.")
+
+    if retriever is None:
+        retriever = VectorRetriever()
+
+    res = evaluate_retriever(retriever, queries, top_k=top_k)
 
     return {
         "num_queries": len(queries),
         "top_k": top_k,
-        "metrics": metrics,
-        "records": eval_records,
+        "metrics": res["metrics"],
+        "records": res["records"],
+    }
+
+
+def evaluate_hybrid_pipeline(
+    queries_file: Union[str, Path] = DEFAULT_EVALUATION_FILE,
+    top_k: int = 5,
+    dense_retriever: Optional[VectorRetriever] = None,
+    sparse_retriever: Optional[BM25Retriever] = None,
+    hybrid_retriever: Optional[HybridRetriever] = None,
+) -> Dict[str, Any]:
+    """Run comprehensive comparative evaluation across Dense, Sparse (BM25), and Hybrid retrieval.
+
+    Args:
+        queries_file: Path to evaluation JSON file.
+        top_k: Number of chunks to retrieve per query.
+        dense_retriever: Optional pre-configured VectorRetriever.
+        sparse_retriever: Optional pre-configured BM25Retriever.
+        hybrid_retriever: Optional pre-configured HybridRetriever.
+
+    Returns:
+        Dictionary with num_queries, top_k, and separate evaluations for dense, sparse, and hybrid.
+    """
+    path = Path(queries_file)
+    if not path.exists():
+        raise FileNotFoundError(f"Evaluation queries file not found at '{path}'.")
+
+    with open(path, "r", encoding="utf-8") as f:
+        queries = json.load(f)
+
+    if not isinstance(queries, list) or len(queries) == 0:
+        raise ValueError(f"Evaluation file '{path}' is empty or not a valid JSON list.")
+
+    dense = dense_retriever or VectorRetriever()
+    sparse = sparse_retriever or BM25Retriever()
+    hybrid = hybrid_retriever or HybridRetriever(dense_retriever=dense, sparse_retriever=sparse)
+
+    dense_eval = evaluate_retriever(dense, queries, top_k=top_k)
+    sparse_eval = evaluate_retriever(sparse, queries, top_k=top_k)
+    hybrid_eval = evaluate_retriever(hybrid, queries, top_k=top_k)
+
+    return {
+        "num_queries": len(queries),
+        "top_k": top_k,
+        "dense": dense_eval,
+        "sparse": sparse_eval,
+        "hybrid": hybrid_eval,
     }
 
 
@@ -143,31 +209,50 @@ def run_evaluation_cli(
     queries_file: Path = DEFAULT_EVALUATION_FILE,
     top_k: int = 5,
 ) -> int:
-    """CLI runner executing retrieval evaluation and printing formatted metrics."""
-    print("TrustRAG Semantic Retrieval Evaluation\n")
-    print("Note: Evaluated on local development benchmark dataset (not a production claim).\n")
+    """CLI runner executing comparative retrieval evaluation across Dense, Sparse, and Hybrid."""
+    print("=" * 70)
+    print(" TrustRAG Hybrid Retrieval Engine Evaluation (Milestone 8)")
+    print("=" * 70)
+    print("\n[NOTE] Evaluated on local development benchmark dataset.")
+    print("       Dataset is intentionally small (unit benchmark). Not a production claim.\n")
 
     try:
-        results = evaluate_retrieval(queries_file=queries_file, top_k=top_k)
+        results = evaluate_hybrid_pipeline(queries_file=queries_file, top_k=top_k)
     except Exception as exc:
         print(f"Error during evaluation: {exc}", file=sys.stderr)
         return 1
 
-    metrics = results["metrics"]
     num_queries = results["num_queries"]
+    print(f"Total Queries Evaluated: {num_queries}")
+    print(f"Top-K Limit: {top_k}\n")
 
-    print(f"Queries Evaluated: {num_queries}")
-    print(f"Top-K: {top_k}\n")
-    print("Metrics:")
-    print(f"  Hit@1 : {metrics['hit_at_1'] * 100:.1f}%")
-    print(f"  Hit@3 : {metrics['hit_at_3'] * 100:.1f}%")
-    print(f"  Hit@5 : {metrics['hit_at_5'] * 100:.1f}%")
-    print(f"  MRR   : {metrics['mrr']:.4f}\n")
+    print("-" * 70)
+    print(f"{'Metric':<12} | {'Dense (FAISS)':<16} | {'Sparse (BM25)':<16} | {'Hybrid (RRF)':<16}")
+    print("-" * 70)
 
-    print("Query Breakdown:")
-    for idx, r in enumerate(results["records"], start=1):
-        status = f"Hit (Rank {r['rank']})" if r['rank'] else "Miss"
-        print(f"  [{idx}] \"{r['query']}\" -> {status} (Top Score: {r['top_score']:.4f})")
+    d_m = results["dense"]["metrics"]
+    s_m = results["sparse"]["metrics"]
+    h_m = results["hybrid"]["metrics"]
+
+    print(f"{'Hit@1':<12} | {d_m['hit_at_1'] * 100:>14.1f}% | {s_m['hit_at_1'] * 100:>14.1f}% | {h_m['hit_at_1'] * 100:>14.1f}%")
+    print(f"{'Hit@3':<12} | {d_m['hit_at_3'] * 100:>14.1f}% | {s_m['hit_at_3'] * 100:>14.1f}% | {h_m['hit_at_3'] * 100:>14.1f}%")
+    print(f"{'Hit@5':<12} | {d_m['hit_at_5'] * 100:>14.1f}% | {s_m['hit_at_5'] * 100:>14.1f}% | {h_m['hit_at_5'] * 100:>14.1f}%")
+    print(f"{'MRR':<12} | {d_m['mrr']:>15.4f} | {s_m['mrr']:>15.4f} | {h_m['mrr']:>15.4f}")
+    print("-" * 70)
+
+    print("\nQuery Breakdown (Rank Comparison: Dense / Sparse / Hybrid):")
+    for idx in range(num_queries):
+        d_rec = results["dense"]["records"][idx]
+        s_rec = results["sparse"]["records"][idx]
+        h_rec = results["hybrid"]["records"][idx]
+
+        q = d_rec["query"]
+        d_rank = f"Rank {d_rec['rank']}" if d_rec['rank'] else "Miss"
+        s_rank = f"Rank {s_rec['rank']}" if s_rec['rank'] else "Miss"
+        h_rank = f"Rank {h_rec['rank']}" if h_rec['rank'] else "Miss"
+
+        print(f"  [{idx + 1}] \"{q}\"")
+        print(f"       Dense: {d_rank:<10} | Sparse: {s_rank:<10} | Hybrid: {h_rank:<10}")
 
     print("\nOverall Status: SUCCESS")
     return 0
@@ -175,7 +260,7 @@ def run_evaluation_cli(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="TrustRAG Retrieval Benchmark Evaluator (Milestone 9)",
+        description="TrustRAG Hybrid Retrieval Benchmark Evaluator (Milestone 8)",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(

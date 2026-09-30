@@ -9,9 +9,13 @@ from backend.app.retrieval.retriever import VectorRetriever
 from scripts.evaluate_retrieval import (
     DEFAULT_EVALUATION_FILE,
     compute_metrics,
+    evaluate_hybrid_pipeline,
     evaluate_retrieval,
+    evaluate_retriever,
     run_evaluation_cli,
 )
+from backend.app.retrieval.bm25_retriever import BM25Retriever
+from backend.app.retrieval.hybrid_retriever import HybridRetriever
 
 
 @pytest.fixture(scope="module")
@@ -67,22 +71,30 @@ def test_evaluate_retrieval_missing_file(tmp_path: Path):
         evaluate_retrieval(queries_file=non_existent)
 
 
-def test_evaluate_retrieval_integration(encoder: EmbeddingEncoder):
-    """Verify evaluate_retrieval executes against the real dataset successfully."""
+def test_evaluate_hybrid_pipeline_integration(encoder: EmbeddingEncoder):
+    """Verify evaluate_hybrid_pipeline calculates metrics across Dense, Sparse, and Hybrid."""
     if DEFAULT_EVALUATION_FILE.exists():
-        retriever = VectorRetriever(encoder=encoder)
-        eval_result = evaluate_retrieval(
+        dense = VectorRetriever(encoder=encoder)
+        sparse = BM25Retriever()
+        hybrid = HybridRetriever(dense_retriever=dense, sparse_retriever=sparse)
+
+        result = evaluate_hybrid_pipeline(
             queries_file=DEFAULT_EVALUATION_FILE,
-            retriever=retriever,
             top_k=4,
+            dense_retriever=dense,
+            sparse_retriever=sparse,
+            hybrid_retriever=hybrid,
         )
 
-        assert eval_result["num_queries"] >= 4
-        assert "metrics" in eval_result
-        metrics = eval_result["metrics"]
-        assert 0.0 <= metrics["hit_at_1"] <= 1.0
-        assert 0.0 <= metrics["mrr"] <= 1.0
-        assert len(eval_result["records"]) == eval_result["num_queries"]
+        assert result["num_queries"] >= 4
+        for mode in ["dense", "sparse", "hybrid"]:
+            assert mode in result
+            m = result[mode]["metrics"]
+            assert 0.0 <= m["hit_at_1"] <= 1.0
+            assert 0.0 <= m["hit_at_3"] <= 1.0
+            assert 0.0 <= m["hit_at_5"] <= 1.0
+            assert 0.0 <= m["mrr"] <= 1.0
+            assert len(result[mode]["records"]) == result["num_queries"]
 
 
 def test_run_evaluation_cli():
