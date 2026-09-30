@@ -20,11 +20,19 @@ DEFAULT_EMBEDDING_BATCH_SIZE = 32
 EMBEDDINGS_OUTPUT_FILE = PROCESSED_DATA_DIR / "embeddings.npy"
 EMBEDDING_METADATA_FILE = PROCESSED_DATA_DIR / "embedding_metadata.json"
 
-# FAISS Retrieval Defaults
+# Retrieval Defaults
 FAISS_INDEX_FILE = PROCESSED_DATA_DIR / "index.faiss"
 DEFAULT_TOP_K = 5
 MAX_TOP_K = 20
 DEFAULT_SIMILARITY_THRESHOLD = 0.0
+
+# Hybrid Retrieval & Fusion Defaults
+DEFAULT_DENSE_TOP_K = 5
+DEFAULT_SPARSE_TOP_K = 5
+DEFAULT_FINAL_TOP_K = 5
+DEFAULT_RRF_K = 60
+MIN_RRF_K = 1
+MAX_RRF_K = 1000
 
 # Ensure necessary directories exist
 RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)

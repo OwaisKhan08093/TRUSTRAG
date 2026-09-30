@@ -2,13 +2,12 @@
 
 from typing import Any, Dict, List, Optional, Sequence
 
+from backend.app.config import DEFAULT_RRF_K, MAX_RRF_K, MIN_RRF_K
+
 
 class RRFError(Exception):
     """Raised when Reciprocal Rank Fusion receives invalid arguments or malformed data."""
     pass
-
-
-DEFAULT_RRF_K: int = 60
 
 
 def reciprocal_rank_fusion(
@@ -25,7 +24,7 @@ def reciprocal_rank_fusion(
     Args:
         ranked_lists: Sequence of ranked result lists, where each result is a dictionary
                       containing at least a 'chunk_id' key.
-        k: Smoothing constant (positive integer, default: 60). Controls the balance
+        k: Smoothing constant (positive integer, default: DEFAULT_RRF_K). Controls the balance
            between high-ranked and lower-ranked items.
         top_k: Optional limit on the number of returned fused results.
 
@@ -35,13 +34,13 @@ def reciprocal_rank_fusion(
 
     Raises:
         TypeError: If ranked_lists is not a sequence, or elements are not dicts with str chunk_id.
-        ValueError: If k < 1 or top_k < 1.
+        ValueError: If k is out of bounds [MIN_RRF_K, MAX_RRF_K] or top_k < 1.
     """
     if not isinstance(ranked_lists, (list, tuple)):
         raise TypeError(f"ranked_lists must be a sequence of lists, got {type(ranked_lists).__name__}.")
 
-    if not isinstance(k, int) or k < 1:
-        raise ValueError(f"RRF constant k must be a positive integer >= 1, got {k}.")
+    if not isinstance(k, int) or k < MIN_RRF_K or k > MAX_RRF_K:
+        raise ValueError(f"RRF constant k must be an integer between {MIN_RRF_K} and {MAX_RRF_K}, got {k}.")
 
     if top_k is not None:
         if not isinstance(top_k, int) or top_k < 1:

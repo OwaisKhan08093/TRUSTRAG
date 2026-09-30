@@ -91,11 +91,14 @@ def test_rrf_validation_errors():
     with pytest.raises(TypeError, match="missing valid string 'chunk_id'"):
         reciprocal_rank_fusion([[{"chunk_id": 123}]])
 
-    with pytest.raises(ValueError, match="RRF constant k must be a positive integer"):
+    with pytest.raises(ValueError, match="RRF constant k must be an integer between"):
         reciprocal_rank_fusion([[]], k=0)
 
-    with pytest.raises(ValueError, match="RRF constant k must be a positive integer"):
+    with pytest.raises(ValueError, match="RRF constant k must be an integer between"):
         reciprocal_rank_fusion([[]], k=-1)
+
+    with pytest.raises(ValueError, match="RRF constant k must be an integer between"):
+        reciprocal_rank_fusion([[]], k=5000)
 
     with pytest.raises(ValueError, match="top_k must be a positive integer"):
         reciprocal_rank_fusion([[{"chunk_id": "c1"}]], top_k=0)

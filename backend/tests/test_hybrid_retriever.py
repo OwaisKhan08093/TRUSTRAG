@@ -32,12 +32,14 @@ def test_hybrid_retriever_init(mock_retrievers):
     assert hybrid.dense_retriever is dense
     assert hybrid.sparse_retriever is sparse
     assert hybrid.default_top_k == 3
+    assert hybrid.default_dense_top_k == 4
+    assert hybrid.default_sparse_top_k == 4
     assert hybrid.rrf_k == 30
     assert hybrid.max_top_k == 15
 
 
 def test_hybrid_retriever_init_validation(mock_retrievers):
-    """Verify constructor parameter validations."""
+    """Verify constructor parameter validations and bounds."""
     dense, sparse = mock_retrievers
 
     with pytest.raises(ValueError, match="default_top_k must be between"):
@@ -46,8 +48,14 @@ def test_hybrid_retriever_init_validation(mock_retrievers):
     with pytest.raises(ValueError, match="default_dense_top_k must be between"):
         HybridRetriever(dense_retriever=dense, sparse_retriever=sparse, default_dense_top_k=30, max_top_k=10)
 
-    with pytest.raises(ValueError, match="rrf_k must be a positive integer"):
+    with pytest.raises(ValueError, match="default_sparse_top_k must be between"):
+        HybridRetriever(dense_retriever=dense, sparse_retriever=sparse, default_sparse_top_k=0)
+
+    with pytest.raises(ValueError, match="rrf_k must be an integer between"):
         HybridRetriever(dense_retriever=dense, sparse_retriever=sparse, rrf_k=0)
+
+    with pytest.raises(ValueError, match="rrf_k must be an integer between"):
+        HybridRetriever(dense_retriever=dense, sparse_retriever=sparse, rrf_k=5000)
 
 
 def test_hybrid_retriever_retrieve_logic(mock_retrievers):

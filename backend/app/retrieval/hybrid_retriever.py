@@ -2,10 +2,18 @@
 
 from typing import Any, Dict, List, Optional
 
-from backend.app.config import DEFAULT_TOP_K, MAX_TOP_K
+from backend.app.config import (
+    DEFAULT_DENSE_TOP_K,
+    DEFAULT_FINAL_TOP_K,
+    DEFAULT_RRF_K,
+    DEFAULT_SPARSE_TOP_K,
+    MAX_RRF_K,
+    MAX_TOP_K,
+    MIN_RRF_K,
+)
 from backend.app.retrieval.bm25_retriever import BM25Retriever
 from backend.app.retrieval.retriever import VectorRetriever
-from backend.app.retrieval.rrf import DEFAULT_RRF_K, reciprocal_rank_fusion
+from backend.app.retrieval.rrf import reciprocal_rank_fusion
 
 
 class HybridRetrieverError(Exception):
@@ -20,9 +28,9 @@ class HybridRetriever:
         self,
         dense_retriever: Optional[VectorRetriever] = None,
         sparse_retriever: Optional[BM25Retriever] = None,
-        default_top_k: int = DEFAULT_TOP_K,
-        default_dense_top_k: int = DEFAULT_TOP_K,
-        default_sparse_top_k: int = DEFAULT_TOP_K,
+        default_top_k: int = DEFAULT_FINAL_TOP_K,
+        default_dense_top_k: int = DEFAULT_DENSE_TOP_K,
+        default_sparse_top_k: int = DEFAULT_SPARSE_TOP_K,
         rrf_k: int = DEFAULT_RRF_K,
         max_top_k: int = MAX_TOP_K,
     ) -> None:
@@ -34,11 +42,11 @@ class HybridRetriever:
             default_top_k: Number of final fused results to return by default.
             default_dense_top_k: Number of dense candidate chunks to retrieve.
             default_sparse_top_k: Number of sparse candidate chunks to retrieve.
-            rrf_k: RRF smoothing constant (default: 60).
+            rrf_k: RRF smoothing constant (default: DEFAULT_RRF_K).
             max_top_k: Maximum allowed top_k value across all stages.
 
         Raises:
-            ValueError: If any top_k is non-positive or exceeds max_top_k, or if rrf_k < 1.
+            ValueError: If any top_k is non-positive or exceeds max_top_k, or if rrf_k is out of bounds.
         """
         if default_top_k < 1 or default_top_k > max_top_k:
             raise ValueError(f"default_top_k must be between 1 and {max_top_k}, got {default_top_k}.")
@@ -50,8 +58,8 @@ class HybridRetriever:
             raise ValueError(
                 f"default_sparse_top_k must be between 1 and {max_top_k}, got {default_sparse_top_k}."
             )
-        if rrf_k < 1:
-            raise ValueError(f"rrf_k must be a positive integer >= 1, got {rrf_k}.")
+        if rrf_k < MIN_RRF_K or rrf_k > MAX_RRF_K:
+            raise ValueError(f"rrf_k must be an integer between {MIN_RRF_K} and {MAX_RRF_K}, got {rrf_k}.")
 
         self._default_top_k = default_top_k
         self._default_dense_top_k = default_dense_top_k
@@ -81,6 +89,16 @@ class HybridRetriever:
     def default_top_k(self) -> int:
         """Return the default top_k value."""
         return self._default_top_k
+
+    @property
+    def default_dense_top_k(self) -> int:
+        """Return the default dense top_k value."""
+        return self._default_dense_top_k
+
+    @property
+    def default_sparse_top_k(self) -> int:
+        """Return the default sparse top_k value."""
+        return self._default_sparse_top_k
 
     @property
     def max_top_k(self) -> int:
@@ -144,11 +162,13 @@ class HybridRetriever:
             raise ValueError(f"sparse_top_k must be a positive integer >= 1, got {effective_sparse_k}.")
         if effective_sparse_k > self._max_top_k:
             raise ValueError(
-                f"sparse_sparse_k ({effective_sparse_k}) exceeds maximum limit of {self._max_top_k}."
+                f"sparse_top_k ({effective_sparse_k}) exceeds maximum limit of {self._max_top_k}."
             )
 
-        if not isinstance(effective_rrf_k, int) or effective_rrf_k < 1:
-            raise ValueError(f"rrf_k must be a positive integer >= 1, got {effective_rrf_k}.")
+        if not isinstance(effective_rrf_k, int) or effective_rrf_k < MIN_RRF_K or effective_rrf_k > MAX_RRF_K:
+            raise ValueError(
+                f"rrf_k must be an integer between {MIN_RRF_K} and {MAX_RRF_K}, got {effective_rrf_k}."
+            )
 
         # 1. Retrieve dense semantic candidates
         try:
