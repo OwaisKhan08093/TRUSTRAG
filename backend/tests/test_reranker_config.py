@@ -71,3 +71,25 @@ def test_validate_reranker_config_invalid_model_name():
 
     with pytest.raises(ValueError, match="model_name must be a non-empty string"):
         validate_reranker_config(model_name="   ")
+
+
+def test_reranker_config_dataclass():
+    """Verify RerankerConfig creates valid objects and enforces invariants."""
+    from backend.app.reranking.config import RerankerConfig, RerankerConfigurationError
+
+    cfg = RerankerConfig(candidate_k=8, final_k=4, batch_size=8)
+    assert cfg.candidate_k == 8
+    assert cfg.final_k == 4
+    assert cfg.to_dict()["candidate_k"] == 8
+
+    # from_dict roundtrip
+    restored = RerankerConfig.from_dict(cfg.to_dict())
+    assert restored == cfg
+
+    # Invariant failure: final_k > candidate_k
+    with pytest.raises(RerankerConfigurationError, match="cannot exceed candidate_k"):
+        RerankerConfig(candidate_k=2, final_k=4)
+
+    # Non-dict in from_dict
+    with pytest.raises(RerankerConfigurationError, match="must be a dictionary"):
+        RerankerConfig.from_dict("not a dict")  # type: ignore

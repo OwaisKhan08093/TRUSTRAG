@@ -10,6 +10,7 @@ from backend.app.config import (
     MAX_RERANKER_TOP_K,
     validate_reranker_config,
 )
+from backend.app.reranking.config import RerankerConfig
 from backend.app.reranking.cross_encoder import CrossEncoderReranker
 from backend.app.reranking.reranker import ResultReranker
 from backend.app.reranking.schema import RerankedChunk
@@ -28,6 +29,7 @@ class RerankingPipeline:
         self,
         retriever: Optional[HybridRetriever] = None,
         reranker: Optional[ResultReranker] = None,
+        config: Optional[RerankerConfig] = None,
         default_candidate_k: int = DEFAULT_RERANKER_CANDIDATE_K,
         default_final_k: int = DEFAULT_RERANKER_TOP_K,
         default_batch_size: int = DEFAULT_RERANKER_BATCH_SIZE,
@@ -38,6 +40,7 @@ class RerankingPipeline:
         Args:
             retriever: Optional pre-configured HybridRetriever instance.
             reranker: Optional pre-configured ResultReranker instance.
+            config: Optional pre-validated RerankerConfig instance.
             default_candidate_k: Number of candidate passages to fetch from hybrid retrieval.
             default_final_k: Final top-K reranked passages to return.
             default_batch_size: Inference batch size.
@@ -46,17 +49,20 @@ class RerankingPipeline:
         Raises:
             ValueError: If configuration values or relationships are invalid.
         """
-        validate_reranker_config(
-            candidate_k=default_candidate_k,
-            final_k=default_final_k,
-            batch_size=default_batch_size,
-            model_name=model_name,
-        )
+        if config is not None:
+            self._config = config
+        else:
+            self._config = RerankerConfig(
+                model_name=model_name,
+                candidate_k=default_candidate_k,
+                final_k=default_final_k,
+                batch_size=default_batch_size,
+            )
 
-        self._candidate_k = default_candidate_k
-        self._final_k = default_final_k
-        self._batch_size = default_batch_size
-        self._model_name = model_name
+        self._candidate_k = self._config.candidate_k
+        self._final_k = self._config.final_k
+        self._batch_size = self._config.batch_size
+        self._model_name = self._config.model_name
 
         self._retriever = retriever or HybridRetriever()
         if reranker is not None:
