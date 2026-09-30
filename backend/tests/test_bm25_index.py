@@ -111,3 +111,70 @@ def test_bm25_with_processed_data():
     if CHUNKS_OUTPUT_FILE.exists():
         index = BM25Index.from_chunks_file(CHUNKS_OUTPUT_FILE)
         assert index.corpus_size > 0
+
+
+def test_bm25_search_basic():
+    """Verify BM25 search scores and ranks matching documents highest."""
+    chunks = [
+        {"chunk_id": "c0", "text": "Apples and oranges in the orchard."},
+        {"chunk_id": "c1", "text": "Data fiduciary and personal data consent obligations."},
+        {"chunk_id": "c2", "text": "Grievance redressal mechanism under the data act."},
+    ]
+    index = BM25Index(chunks)
+    results = index.search("fiduciary consent", top_k=2)
+
+    assert len(results) == 2
+    assert results[0]["index"] == 1
+    assert results[0]["score"] > results[1]["score"]
+    assert isinstance(results[0]["index"], int)
+    assert isinstance(results[0]["score"], float)
+
+
+def test_bm25_search_top_k_bounds():
+    """Verify BM25 search never returns more results than corpus size."""
+    chunks = ["Document A", "Document B"]
+    index = BM25Index(chunks)
+    results = index.search("Document", top_k=10)
+    assert len(results) == 2
+
+
+def test_bm25_search_empty_or_invalid_query():
+    """Verify BM25 search rejects invalid or empty query inputs."""
+    chunks = ["Some text here"]
+    index = BM25Index(chunks)
+
+    with pytest.raises(ValueError, match="Query string cannot be empty"):
+        index.search("")
+
+    with pytest.raises(ValueError, match="Query string cannot be empty"):
+        index.search("   ")
+
+    with pytest.raises(TypeError, match="Query must be a string"):
+        index.search(None)  # type: ignore
+
+    with pytest.raises(TypeError, match="Query must be a string"):
+        index.search(["keyword"])  # type: ignore
+
+
+def test_bm25_search_invalid_top_k():
+    """Verify BM25 search rejects invalid top_k."""
+    chunks = ["Some text here"]
+    index = BM25Index(chunks)
+
+    with pytest.raises(ValueError, match="top_k must be a positive integer"):
+        index.search("text", top_k=0)
+
+    with pytest.raises(ValueError, match="top_k must be a positive integer"):
+        index.search("text", top_k=-5)
+
+    with pytest.raises(ValueError, match="top_k must be a positive integer"):
+        index.search("text", top_k=3.5)  # type: ignore
+
+
+def test_bm25_search_zero_match_query():
+    """Verify BM25 search handles queries with zero matching terms gracefully."""
+    chunks = ["Alpha Beta Gamma", "Delta Epsilon Zeta"]
+    index = BM25Index(chunks)
+    results = index.search("UnrelatedXyzToken", top_k=2)
+    assert len(results) == 2
+    assert all(r["score"] == 0.0 for r in results)

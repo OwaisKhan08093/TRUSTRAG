@@ -97,6 +97,59 @@ class BM25Index:
         """Return the tokenized representation of the indexed corpus."""
         return list(self._tokenized_corpus)
 
+    def search(
+        self,
+        query: str,
+        top_k: int = 5,
+    ) -> List[Dict[str, Any]]:
+        """Search the BM25 index using lexical keyword matching.
+
+        Args:
+            query: Non-empty query string.
+            top_k: Maximum number of top ranked results to return (positive integer).
+
+        Returns:
+            List of dictionaries with 'index' (0-based chunk integer position)
+            and 'score' (BM25 float score), sorted in descending order of score.
+            Never returns more results than the corpus size.
+
+        Raises:
+            TypeError: If query is not a string or top_k is not an integer.
+            ValueError: If query is empty/whitespace or top_k < 1.
+            BM25IndexError: If internal BM25 scoring fails.
+        """
+        if not isinstance(query, str):
+            raise TypeError(f"Query must be a string, got {type(query).__name__}.")
+
+        stripped_query = query.strip()
+        if not stripped_query:
+            raise ValueError("Query string cannot be empty or contain only whitespace.")
+
+        if not isinstance(top_k, int) or top_k < 1:
+            raise ValueError(f"top_k must be a positive integer >= 1, got {top_k}.")
+
+        # Tokenize query using index's tokenizer
+        query_tokens = self._tokenizer(stripped_query)
+
+        try:
+            # Compute BM25 scores for all corpus documents
+            scores = self._bm25.get_scores(query_tokens)
+        except Exception as exc:
+            raise BM25IndexError(f"BM25 scoring failed: {exc}") from exc
+
+        # Determine effective top_k bounded by corpus size
+        effective_k = min(top_k, self.corpus_size)
+
+        # Sort indices by score descending; break ties by original document order
+        indexed_scores = [(idx, float(score)) for idx, score in enumerate(scores)]
+        indexed_scores.sort(key=lambda item: item[1], reverse=True)
+
+        results: List[Dict[str, Any]] = [
+            {"index": idx, "score": score}
+            for idx, score in indexed_scores[:effective_k]
+        ]
+        return results
+
     @classmethod
     def from_chunks_file(
         cls,
