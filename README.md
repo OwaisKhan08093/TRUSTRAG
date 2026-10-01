@@ -6,7 +6,7 @@ TrustRAG is a solo-developed Confidence-Aware Retrieval-Augmented Generation (RA
 
 ## Current Status
 
-**Phase 3 — Hybrid Retrieval Engine (Dense FAISS + Sparse BM25 + Reciprocal Rank Fusion) is COMPLETE.**
+**Phase 4 — Neural Cross-Encoder Reranking Engine is COMPLETE.**
 
 * [x] **Phase 0 & 1**: Document ingestion (PyMuPDF), legal cleaning, sliding-window chunking, metadata persistence.
 * [x] **Phase 2**: Dense semantic vector retrieval engine:
@@ -19,45 +19,60 @@ TrustRAG is a solo-developed Confidence-Aware Retrieval-Augmented Generation (RA
 * [x] **Phase 3**: Hybrid Retrieval Subsystem:
   * [x] `BM25Index`: Sparse lexical index built on `rank_bm25` with tokenizer and invariant validation.
   * [x] `BM25Retriever`: Independent sparse keyword retriever returning standard structured chunk schemas.
-  * [x] `reciprocal_rank_fusion`: Standalone Reciprocal Rank Fusion ($1 / (k + \text{rank})$) combining candidate rankings with tie-breaking and deduplication.
+  * [x] `reciprocal_rank_fusion`: Standalone Reciprocal Rank Fusion ($1 / (k + \text{rank})$) combining candidate rankings.
   * [x] `HybridRetriever`: Unified multi-path orchestrator uniting dense semantic search, sparse lexical search, and RRF.
   * [x] Hybrid configuration settings in `backend/app/config.py` with strict bounds validation.
   * [x] Comparative evaluation suite evaluating Dense, Sparse, and Hybrid performance on local benchmark queries.
-  * [x] End-to-end integration test coverage.
+* [x] **Phase 4**: Neural Cross-Encoder Reranking Subsystem:
+  * [x] `CrossEncoderReranker`: Local Hugging Face cross-encoder model wrapper (`cross-encoder/ms-marco-MiniLM-L-6-v2`).
+  * [x] Pair scoring with batch inference, score verification, and order preservation.
+  * [x] `RerankedChunk`: Standardized output schema with complete provenance tracking and rank/score history.
+  * [x] `ResultReranker`: Neural reranker re-ordering candidate pools with deterministic tie-breaking.
+  * [x] `RerankingPipeline`: End-to-end orchestrator connecting HybridRetriever to CrossEncoder scoring.
+  * [x] `RerankerConfig` + `validate_reranker_config`: Strict configuration models and bounds validation.
+  * [x] Benchmark evaluation script (`scripts/evaluate_reranking.py`) with Hit@1, Hit@3, Hit@5, and MRR metrics.
+  * [x] End-to-end integration and edge case coverage.
 
 ---
 
 ## Architecture
 
 ```text
-                    User Query
-                        │
-             ┌──────────┴──────────┐
-             ▼                     ▼
-       Dense Retrieval        Sparse Retrieval
-   (SentenceTransformers)       (BM25Okapi)
-            +                     +
-          FAISS              Token Index
-             │                     │
-             └──────────┬──────────┘
-                        ▼
-                Reciprocal Rank
-                  Fusion (RRF)
-                        │
-                        ▼
-                 Hybrid Results
-                        │
-                        ▼
-                 Ranked Evidence
+                           User Query
+                               │
+                ┌──────────────┴──────────────┐
+                ▼                             ▼
+         Dense Retrieval               Sparse Retrieval
+     (SentenceTransformers)              (BM25Okapi)
+              +                               +
+            FAISS                        Token Index
+                │                             │
+                └──────────────┬──────────────┘
+                               ▼
+                        Reciprocal Rank
+                          Fusion (RRF)
+                               │
+                               ▼
+                     Candidate Evidence Pool
+                         (candidate_k)
+                               │
+                               ▼
+                     Cross-Encoder Reranker
+                 (ms-marco-MiniLM-L-6-v2)
+                               │
+                               ▼
+                       Re-ranked Evidence
+                           (final_k)
 ```
 
-### Retrieval Paradigm Comparison
+### Retrieval & Reranking Paradigm Comparison
 
 | Subsystem | Paradigm | Implementation | Purpose |
 |---|---|---|---|
-| **Dense Path** | Semantic similarity | `SentenceTransformers` + `FAISS` | Captures contextual meaning, synonyms, and semantic paraphrasing. |
-| **Sparse Path** | Lexical / keyword matching | `rank_bm25` (`BM25Okapi`) | Captures exact keyword hits, legal section numbers, acronyms, and rare terminology. |
-| **Fusion Layer** | Multi-retriever combination | Reciprocal Rank Fusion (`RRF`) | Merges heterogeneous score distributions without manual score calibration or weighting. |
+| **Dense Path** | Bi-encoder semantic similarity | `SentenceTransformers` + `FAISS` | Fast retrieval capturing contextual meaning, synonyms, and semantic paraphrasing. |
+| **Sparse Path** | Lexical / keyword matching | `rank_bm25` (`BM25Okapi`) | Fast retrieval capturing exact keyword hits, section numbers, acronyms, and terminology. |
+| **Fusion Layer** | Multi-retriever combination | Reciprocal Rank Fusion (`RRF`) | Merges heterogeneous score distributions without manual score calibration. |
+| **Cross-Encoder Reranker** | Full cross-attention joint scoring | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Deep query-document token interaction for high-precision final ranking of candidates. |
 
 $$\text{RRF Score}(d) = \sum_{r \in \text{retrievers}} \frac{1}{k + \text{rank}(r, d)}$$
 
@@ -66,11 +81,12 @@ $$\text{RRF Score}(d) = \sum_{r \in \text{retrievers}} \frac{1}{k + \text{rank}(
 ## Important Architectural Notes & Boundaries
 
 > [!WARNING]
-> * **Hybrid retrieval does NOT generate answers.**
-> * **Hybrid retrieval does NOT prove factual correctness.**
-> * **Hybrid retrieval does NOT prevent hallucinations.**
+> * **Cross-encoder reranking does NOT generate answers.**
+> * **Cross-encoder reranking does NOT prove factual correctness.**
+> * **Cross-encoder reranking does NOT synthesize text or prevent hallucinations.**
+> * **Cross-encoder reranking does NOT replace verification, citations, or confidence scoring.**
 >
-> Retrieval solely provides ranked candidate passages as grounded evidence for downstream generation and verification layers.
+> Reranking solely provides re-ordered, high-precision candidate passages as grounded evidence for downstream generation, citation, and verification layers.
 
 ---
 
@@ -126,7 +142,13 @@ Run comparative benchmark evaluation across all retrieval paths:
 .venv\Scripts\python scripts/evaluate_retrieval.py
 ```
 
-### 5. Run Full Test Suite
+### 5. Evaluate Neural Reranking Performance (Hybrid vs Hybrid + Reranker)
+Run comparative benchmark evaluation evaluating reranking precision:
+```bash
+.venv\Scripts\python scripts/evaluate_reranking.py
+```
+
+### 6. Run Full Test Suite
 Execute all unit, component, and integration tests:
 ```bash
 .venv\Scripts\pytest
@@ -136,30 +158,52 @@ Execute all unit, component, and integration tests:
 
 ## Python API Usage
 
-```python
-from backend.app.retrieval import HybridRetriever, VectorRetriever, BM25Retriever
+### End-to-End Reranking Pipeline
 
-# 1. Unified Hybrid Retrieval (Dense + Sparse + RRF)
-hybrid_retriever = HybridRetriever()
-results = hybrid_retriever.retrieve(
-    query="obligations of data fiduciary and notice requirements",
-    top_k=5,
-    dense_top_k=5,
-    sparse_top_k=5,
-    rrf_k=60,
+```python
+from backend.app.reranking import RerankingPipeline
+
+# Initialize end-to-end pipeline (HybridRetriever + CrossEncoder)
+pipeline = RerankingPipeline(
+    default_candidate_k=5,
+    default_final_k=3,
+    default_batch_size=16,
+    model_name="cross-encoder/ms-marco-MiniLM-L-6-v2",
+)
+
+results = pipeline.retrieve(
+    query="What are the grounds for processing personal data and obligations of notice?",
+    top_k=3,
+    candidate_k=5,
 )
 
 for item in results:
-    print(f"Rank {item['rank']} | RRF Score: {item['score']:.4f} | Chunk: {item['chunk_id']}")
-    print(f"Text: {item['text'][:120]}...\n")
+    print(f"Final Rank: {item.final_rank} (was Hybrid Rank: {item.original_rank})")
+    print(f"Rerank Score: {item.rerank_score:.4f} | Original Score: {item.original_score:.4f}")
+    print(f"Doc: {item.document_name} | Pages: {item.page_start}-{item.page_end}")
+    print(f"Text: {item.text[:120]}...\n")
+```
 
-# 2. Independent Dense Retrieval
-dense_retriever = VectorRetriever()
-dense_results = dense_retriever.retrieve("rights of data principal", top_k=3)
+### Standalone Component Usage
 
-# 3. Independent Sparse BM25 Retrieval
-sparse_retriever = BM25Retriever()
-sparse_results = sparse_retriever.retrieve("grievance redressal", top_k=3)
+```python
+from backend.app.retrieval import HybridRetriever, VectorRetriever, BM25Retriever
+from backend.app.reranking import ResultReranker, CrossEncoderReranker
+
+# 1. Hybrid Retrieval (Dense + Sparse + RRF)
+hybrid_retriever = HybridRetriever()
+candidates = hybrid_retriever.retrieve(
+    query="obligations of data fiduciary",
+    top_k=5,
+)
+
+# 2. Standalone Neural Reranking
+reranker = ResultReranker()
+reranked = reranker.rerank(
+    query="obligations of data fiduciary",
+    results=candidates,
+    top_k=3,
+)
 ```
 
 ---
@@ -176,6 +220,11 @@ Key constants configured in `backend/app/config.py`:
 * `DEFAULT_SPARSE_TOP_K`: Default sparse candidates (5).
 * `DEFAULT_FINAL_TOP_K`: Default final fused chunks (5).
 * `DEFAULT_RRF_K`: RRF smoothing constant (60, bounds: `1` to `1000`).
+* `DEFAULT_RERANKER_MODEL`: `cross-encoder/ms-marco-MiniLM-L-6-v2`.
+* `DEFAULT_RERANKER_TOP_K`: Default final reranked passages (3).
+* `DEFAULT_RERANKER_CANDIDATE_K`: Default candidate pool size for reranker (5).
+* `DEFAULT_RERANKER_BATCH_SIZE`: Default inference batch size (16).
+* `MAX_RERANKER_TOP_K`: Maximum allowed top-K limit (20).
 
 ---
 
@@ -191,8 +240,7 @@ Key constants configured in `backend/app/config.py`:
 
 ## Out of Scope (Planned for Subsequent Phases)
 
-The following components are **NOT** implemented in Phase 3 and will be developed in future phases:
-* Cross-Encoder Reranking
+The following components are **NOT** implemented in Phase 4 and will be developed in future phases:
 * Local LLM Inference (Ollama / vLLM)
 * Answer Generation Engine
 * Exact Citation & Provenance Generator
