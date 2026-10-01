@@ -13,7 +13,7 @@ from backend.app.config import (
 )
 
 
-class RerankerConfigurationError(Exception):
+class RerankerConfigurationError(ValueError):
     """Raised when cross-encoder reranker configuration parameters fail validation."""
     pass
 
