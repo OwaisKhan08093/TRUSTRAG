@@ -6,7 +6,7 @@ TrustRAG is a solo-developed Confidence-Aware Retrieval-Augmented Generation (RA
 
 ## Current Status
 
-**Phase 5 — Trust Engine & Evidence Grounding is COMPLETE.**
+**Phase 6 — Grounded LLM Answer Generation + Citations is COMPLETE.**
 
 * [x] **Phase 0 & 1**: Document ingestion (PyMuPDF), legal cleaning, sliding-window chunking, metadata persistence.
 * [x] **Phase 2**: Dense semantic vector retrieval engine:
@@ -38,10 +38,19 @@ TrustRAG is a solo-developed Confidence-Aware Retrieval-Augmented Generation (RA
   * [x] `calculate_evidence_coverage`: Transparent lexical query term coverage measurement tracking covered vs uncovered terms.
   * [x] `validate_evidence_provenance`: Provenance integrity verification checking for missing metadata, invalid page ranges, duplicate chunk IDs, and empty texts.
   * [x] `calculate_groundedness`: Multi-signal composite groundedness score synthesized from relevance, coverage, and provenance validity.
-  * [x] `calculate_confidence`: System confidence index derived from groundedness, top-1 relevance strength, query coverage, volume sufficiency, and provenance.
+  * [x] `calculate_confidence`: System confidence index derived from groundedness, top-1 neural relevance, query term coverage, and volume sufficiency.
   * [x] `TrustEngine` & `TrustAssessment`: Core decision engine outputting deterministic trust decisions (`SUPPORTED` vs `INSUFFICIENT_EVIDENCE`) with full explainability.
   * [x] `TrustConfig`: Centralized configuration managing thresholds and weights with strict boundary validation.
   * [x] Evaluation harness (`scripts/evaluate_trust.py`) and end-to-end integration tests (`backend/tests/test_trust_integration.py`).
+* [x] **Phase 6**: Grounded LLM Answer Generation & Citations:
+  * [x] Local LLM wrapper (`LocalLLM`) supporting `Qwen/Qwen2.5-3B-Instruct` via Hugging Face Transformers with lazy loading and low-memory options.
+  * [x] `build_grounded_prompt`: Structured prompt builder enforcing strict evidence constraints and formatted passage provenance.
+  * [x] `GenerationRequest` & `GenerationResult`: Structured models with parameter validation, metadata tracking, and explicit refusal flags.
+  * [x] `GroundedGenerator`: Evidence-constrained generator strictly gated by `TrustAssessment` (abstains immediately on `INSUFFICIENT_EVIDENCE` without LLM invocation).
+  * [x] `build_citation_references` & `Citation`: Provenance-derived citation system with exact document and page mapping (no invented citations).
+  * [x] `GroundedAnswer` & `assemble_grounded_answer`: Final response container combining generated prose, citation markers, and preserved trust metrics.
+  * [x] Generation safeguards & parameter validation (`test_generation_safeguards.py`).
+  * [x] Development evaluation harness (`scripts/evaluate_generation.py`) and end-to-end integration test suite (`backend/tests/test_generation_integration.py`).
 
 ---
 
@@ -90,6 +99,16 @@ TrustRAG is a solo-developed Confidence-Aware Retrieval-Augmented Generation (RA
                       ┌─────────────┴─────────────┐
                       ▼                           ▼
                   SUPPORTED              INSUFFICIENT_EVIDENCE
+                      │                           │
+                      ▼                           ▼
+              GroundedGenerator              NO LLM CALL
+            (Qwen2.5-3B-Instruct)         (Structured Refusal)
+                      │
+                      ▼
+               GroundedAnswer
+                      │
+                      ▼
+             Citation References
 ```
 
 ---
@@ -97,55 +116,43 @@ TrustRAG is a solo-developed Confidence-Aware Retrieval-Augmented Generation (RA
 ## Subsystem Functionality Overview
 
 ### What TrustRAG Currently Does:
-1. **Document Processing**: Ingests, normalizes, and splits PDF documents into semantically coherent overlapping chunks.
-2. **Dense Semantic Retrieval**: Embeds chunks and performs nearest-neighbor vector search in FAISS.
-3. **Sparse Lexical Retrieval**: Indexes chunks and performs BM25 keyword searches with stopword tokenization.
-4. **Hybrid Rank Fusion**: Fuses diverse retrieval rankings using Reciprocal Rank Fusion ($k=60$).
-5. **Neural Cross-Encoder Reranking**: Re-scores top hybrid candidates using deep query-passage cross-attention (`ms-marco-MiniLM-L-6-v2`).
-6. **Evidence Quality Validation**: Enforces strongly typed schemas, finite numerical bounds, and non-empty metadata across evidence items.
-7. **Provenance Integrity Checking**: Validates 1-based page numbers, monotonic page ranges, non-empty identifiers, and absence of duplicates.
-8. **Deterministic Evidence Grounding**: Measures lexical query term coverage and sigmoid-calibrated neural relevance.
-9. **Confidence Index Estimation**: Computes bounded $[0.0, 1.0]$ confidence index based on evidence groundedness, top-1 neural relevance, query term coverage, and volume sufficiency.
-10. **Trust Decision Making**: Emits auditable discrete verdicts (`SUPPORTED` vs `INSUFFICIENT_EVIDENCE`) before answer synthesis.
+1. **Document Ingestion**: Extracts and cleans PDF text while preserving document and page numbers.
+2. **Dense Semantic Retrieval**: Vector search over 384-dimensional embeddings via FAISS.
+3. **Sparse Lexical Retrieval**: BM25 keyword matching with tokenization and invariant checks.
+4. **Hybrid Rank Fusion**: Combines rankings using Reciprocal Rank Fusion ($k=60$).
+5. **Neural Cross-Encoder Reranking**: Re-orders top passages via `ms-marco-MiniLM-L-6-v2`.
+6. **Provenance & Quality Verification**: Enforces 1-based page numbers, monotonic page ranges, ID uniqueness, and metadata completeness.
+7. **Deterministic Groundedness & Confidence**: Multi-signal heuristic scoring based on calibrated sigmoid probabilities, lexical coverage, and volume saturation.
+8. **Hard Trust Gating**: Emits discrete verdicts (`SUPPORTED` vs `INSUFFICIENT_EVIDENCE`).
+9. **Constrained LLM Generation**: Prompts `Qwen/Qwen2.5-3B-Instruct` using only verified evidence passages. If evidence is `INSUFFICIENT_EVIDENCE`, the LLM is **never called** and an abstention response is returned.
+10. **Provenance-Derived Citations**: Builds citation references directly mapped to source document pages (e.g. `[1] DPDP_Act_2023.pdf, page 5`).
 
 ### What TrustRAG Does NOT Do Yet:
-* **LLM Answer Generation**: No generative LLM (Ollama / vLLM / OpenAI) is integrated yet.
-* **Final Natural Language Citations**: Citation markers in generated prose are not yet synthesized.
-* **Abstention Response Synthesis**: Abstention responses are handled at the structured decision level, not via natural language generation.
-* **Agent Orchestration**: Multi-step query planning and tool-calling agents are planned for subsequent phases.
-* **REST API & Web UI**: FastAPI routes and interactive frontend interfaces will be implemented in subsequent phases.
+* **Multi-Agent Orchestration**: Query decomposition and multi-agent coordination will be developed in future phases.
+* **REST API & Web UI**: FastAPI endpoints and web frontend interfaces are reserved for subsequent phases.
 
 ---
 
-## Trust Scoring Methodology
+## Important Disclaimers
 
-The Trust Engine operates purely as a deterministic heuristic evaluation layer:
+> [!IMPORTANT]
+> * **TrustRAG does not guarantee factual correctness.**
+> * **The TrustEngine is a deterministic evidence-based gating layer.**
+> * **The evaluation dataset is a development dataset, not a statistically validated benchmark.**
 
-1. **Relevance Aggregation ($R$)**:
-   $$\text{prob}_i = \text{sigmoid}(s_i) = \frac{1}{1 + e^{-s_i}}$$
-   $$R = \frac{\sum_{i=0}^{N-1} \text{prob}_i \cdot \gamma^i}{\sum_{i=0}^{N-1} \gamma^i}, \quad \gamma = 0.5$$
+---
 
-2. **Lexical Term Coverage ($C$)**:
-   $$C = \frac{|\text{Query Terms} \cap \text{Evidence Tokens}|}{|\text{Query Terms}|}$$
+## Hardware & Model Details
 
-3. **Provenance Validity ($P$)**:
-   $$P = \frac{\text{Valid Chunks Count}}{\text{Total Chunks Count}} \in [0.0, 1.0]$$
-
-4. **Groundedness Score ($G$)**:
-   $$G = w_r \cdot R + w_c \cdot C + w_p \cdot P \quad (w_r=0.55, w_c=0.35, w_p=0.10)$$
-
-5. **Confidence Index**:
-   $$\text{Confidence} = (w_g \cdot G + w_t \cdot \text{prob}_0 + w_c \cdot C + w_v \cdot S_{\text{volume}}) \times P$$
-   where $S_{\text{volume}} = \min(1.0, N / N_{\text{min}})$.
-
-6. **Trust Decision**:
-   $$\text{Decision} = \begin{cases} \text{SUPPORTED} & \text{if } G \ge \theta_G, \; \text{Conf} \ge \theta_{\text{Conf}}, \; C \ge \theta_C, \; P = 1.0, \; N \ge N_{\text{min}} \\ \text{INSUFFICIENT\_EVIDENCE} & \text{otherwise} \end{cases}$$
+* **LLM**: `Qwen/Qwen2.5-3B-Instruct` (Hugging Face Transformers, local inference only).
+* **RAM / Memory Conscious**: Weights are loaded lazily upon first generation request; unit tests utilize stubs and mocks to maintain sub-second execution without downloading multi-gigabyte models.
+* **Decoding**: Greedy decoding (`temperature=0.0`) by default to maximize deterministic, factual grounding.
 
 ---
 
 ## Installation
 
-1. Clone the repository and navigate to the project root:
+1. Clone the repository:
    ```bash
    git clone https://github.com/OwaisKhan08093/TRUSTRAG.git
    cd TRUSTRAG
@@ -162,7 +169,7 @@ The Trust Engine operates purely as a deterministic heuristic evaluation layer:
    source .venv/bin/activate
    ```
 
-3. Install the dependencies:
+3. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
@@ -172,43 +179,41 @@ The Trust Engine operates purely as a deterministic heuristic evaluation layer:
 ## Usage & Commands
 
 ### 1. Ingest PDF Document
-Extract, clean, and chunk raw documents:
 ```bash
 .venv\Scripts\python scripts/ingest.py data/raw/DPDP_Act_2023.pdf
 ```
 
 ### 2. Generate Document Embeddings
-Encode chunk texts into 384-dimensional dense vectors:
 ```bash
 .venv\Scripts\python scripts/embed_chunks.py
 ```
 
 ### 3. Build FAISS Vector Index
-Construct and serialize binary FAISS vector index:
 ```bash
 .venv\Scripts\python scripts/build_faiss_index.py
 ```
 
-### 4. Evaluate Retrieval Performance (Dense vs Sparse vs Hybrid)
-Run comparative benchmark evaluation across all retrieval paths:
+### 4. Evaluate Retrieval Performance
 ```bash
 .venv\Scripts\python scripts/evaluate_retrieval.py
 ```
 
-### 5. Evaluate Neural Reranking Performance (Hybrid vs Hybrid + Reranker)
-Run comparative benchmark evaluation evaluating reranking precision:
+### 5. Evaluate Neural Reranking Performance
 ```bash
 .venv\Scripts\python scripts/evaluate_reranking.py
 ```
 
-### 6. Evaluate Trust Engine Grounding & Decisions
-Run the Trust Engine development evaluation dataset:
+### 6. Evaluate Trust Engine Grounding
 ```bash
 .venv\Scripts\python scripts/evaluate_trust.py
 ```
 
-### 7. Run Full Test Suite
-Execute all unit, component, and integration tests:
+### 7. Evaluate Grounded Generation & Citations
+```bash
+.venv\Scripts\python scripts/evaluate_generation.py
+```
+
+### 8. Run Full Test Suite
 ```bash
 .venv\Scripts\pytest
 ```
@@ -217,81 +222,59 @@ Execute all unit, component, and integration tests:
 
 ## Python API Usage
 
-### End-to-End Retrieval, Reranking, and Trust Decision
+### End-to-End Grounded Answer Generation
 
 ```python
 from backend.app.reranking import RerankingPipeline
 from backend.app.trust import TrustEngine, TrustEvidence, TrustDecision
+from backend.app.generation import GroundedGenerator, assemble_grounded_answer
 
-# 1. Initialize Reranking Pipeline and Trust Engine
+# 1. Initialize Pipeline Components
 pipeline = RerankingPipeline(default_candidate_k=5, default_final_k=3)
 engine = TrustEngine()
+generator = GroundedGenerator()
 
-query = "What are the obligations of a Data Fiduciary before collecting personal data?"
+query = "What notice must a Data Fiduciary give to a Data Principal before collecting personal data?"
 
 # 2. Retrieve and Rerank Evidence
 reranked_chunks = pipeline.retrieve(query, top_k=3, candidate_k=5)
 evidence = [TrustEvidence.from_reranked_chunk(c) for c in reranked_chunks]
 
-# 3. Evaluate Grounding and Issue Trust Decision
+# 3. Evaluate Grounding Gate
 assessment = engine.evaluate(query, evidence)
 
-print(f"Query: {assessment.query}")
-print(f"Decision: {assessment.decision.value}")
-print(f"Groundedness Score: {assessment.groundedness_score:.3f}")
-print(f"Confidence Score: {assessment.confidence_score:.3f}")
-print(f"Coverage Ratio: {assessment.coverage_score:.3f}")
-print(f"Provenance Valid: {assessment.provenance_valid}")
-print(f"Reasons: {assessment.decision_reasons}")
+# 4. Generate Answer (Gated)
+gen_result = generator.generate(query, evidence, assessment)
 
-if assessment.decision == TrustDecision.SUPPORTED:
-    print("-> Evidence is strongly grounded. Safe to proceed to generation.")
-else:
-    print("-> Insufficient evidence. Abstain from generation to prevent hallucination.")
+# 5. Assemble Final Answer with Citations
+grounded_answer = assemble_grounded_answer(gen_result, assessment, evidence)
+
+print(grounded_answer.formatted_response)
+print(f"Trust Decision: {grounded_answer.trust_decision.value}")
+print(f"Confidence Score: {grounded_answer.confidence_score:.3f}")
 ```
 
 ---
 
 ## Configuration Reference
 
-Key constants configured in `backend/app/config.py` and `backend/app/trust/config.py`:
+Key configuration constants:
 
-* `DEFAULT_CHUNK_SIZE_WORDS`: Target chunk size (600 words).
-* `DEFAULT_CHUNK_OVERLAP_WORDS`: Overlap window (120 words).
-* `DEFAULT_EMBEDDING_MODEL`: `sentence-transformers/all-MiniLM-L6-v2` (384-d).
-* `FAISS_INDEX_FILE`: Path to `data/processed/index.faiss`.
-* `DEFAULT_DENSE_TOP_K`: Default dense candidates (5).
-* `DEFAULT_SPARSE_TOP_K`: Default sparse candidates (5).
-* `DEFAULT_FINAL_TOP_K`: Default final fused chunks (5).
-* `DEFAULT_RRF_K`: RRF smoothing constant (60, bounds: `1` to `1000`).
-* `DEFAULT_RERANKER_MODEL`: `cross-encoder/ms-marco-MiniLM-L-6-v2`.
-* `DEFAULT_RERANKER_TOP_K`: Default final reranked passages (3).
-* `DEFAULT_RERANKER_CANDIDATE_K`: Default candidate pool size for reranker (5).
-* `DEFAULT_RERANKER_BATCH_SIZE`: Default inference batch size (16).
-* `TrustConfig.min_confidence_threshold`: Minimum confidence required for `SUPPORTED` (0.50).
-* `TrustConfig.min_groundedness_threshold`: Minimum groundedness required for `SUPPORTED` (0.45).
-* `TrustConfig.min_coverage_threshold`: Minimum lexical term coverage required for `SUPPORTED` (0.30).
-* `TrustConfig.min_evidence_count`: Minimum required supporting evidence chunks (1).
-* `TrustConfig.require_valid_provenance`: Mandatory provenance validity check (`True`).
-
----
-
-## Output Artifacts
-
-* `data/processed/chunks.json`: Processed document chunks with provenance metadata.
-* `data/processed/embeddings.npy`: Binary NumPy array of 384-d L2-normalized embeddings.
-* `data/processed/embedding_metadata.json`: FAISS integer index to chunk ID mappings.
-* `data/processed/index.faiss`: Native serialized FAISS vector index (`IndexFlatIP`).
-* `data/evaluation/retrieval_queries.json`: Grounded benchmark queries with target chunks.
+* `DEFAULT_GENERATION_MODEL`: `Qwen/Qwen2.5-3B-Instruct`.
+* `DEFAULT_MAX_NEW_TOKENS`: `512`.
+* `DEFAULT_TEMPERATURE`: `0.0` (greedy decoding).
+* `DEFAULT_TOP_P`: `0.9`.
+* `DEFAULT_REPETITION_PENALTY`: `1.1`.
+* `TrustConfig.min_confidence_threshold`: `0.50`.
+* `TrustConfig.min_groundedness_threshold`: `0.45`.
+* `TrustConfig.min_coverage_threshold`: `0.30`.
+* `TrustConfig.require_valid_provenance`: `True`.
 
 ---
 
 ## Out of Scope (Planned for Subsequent Phases)
 
-The following components are **NOT** implemented in Phase 5 and will be developed in future phases:
-* Local LLM Inference (Ollama / vLLM)
-* Answer Generation Engine
-* Exact Citation & In-text Provenance Generator
-* Abstention Natural Language Response Generator
-* Multi-Agent Orchestration
-* FastAPI Backend & Interactive UI
+* Multi-agent query decomposition and planning
+* FastAPI backend REST service
+* React frontend user interface
+* Deployment and authentication
