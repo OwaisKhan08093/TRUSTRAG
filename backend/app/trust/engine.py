@@ -92,22 +92,24 @@ class TrustEngine:
 
     def __init__(
         self,
-        min_confidence_threshold: float = 0.50,
-        min_groundedness_threshold: float = 0.45,
-        min_coverage_threshold: float = 0.30,
-        min_evidence_count: int = 1,
-        require_valid_provenance: bool = True,
-        weight_relevance: float = 0.55,
-        weight_coverage: float = 0.35,
-        weight_provenance: float = 0.10,
-        weight_confidence_groundedness: float = 0.50,
-        weight_confidence_top_relevance: float = 0.30,
-        weight_confidence_coverage: float = 0.10,
-        weight_confidence_volume: float = 0.10,
+        config: Optional["TrustConfig"] = None,
+        min_confidence_threshold: Optional[float] = None,
+        min_groundedness_threshold: Optional[float] = None,
+        min_coverage_threshold: Optional[float] = None,
+        min_evidence_count: Optional[int] = None,
+        require_valid_provenance: Optional[bool] = None,
+        weight_relevance: Optional[float] = None,
+        weight_coverage: Optional[float] = None,
+        weight_provenance: Optional[float] = None,
+        weight_confidence_groundedness: Optional[float] = None,
+        weight_confidence_top_relevance: Optional[float] = None,
+        weight_confidence_coverage: Optional[float] = None,
+        weight_confidence_volume: Optional[float] = None,
     ) -> None:
         """Initialize TrustEngine with configurable evaluation thresholds and weights.
 
         Args:
+            config: Optional TrustConfig instance.
             min_confidence_threshold: Minimum confidence required for SUPPORTED decision.
             min_groundedness_threshold: Minimum groundedness score required for SUPPORTED.
             min_coverage_threshold: Minimum query term coverage ratio required for SUPPORTED.
@@ -121,31 +123,58 @@ class TrustEngine:
             weight_confidence_coverage: Coverage weight in confidence score.
             weight_confidence_volume: Volume sufficiency weight in confidence score.
         """
-        for th_name, th_val in [
-            ("min_confidence_threshold", min_confidence_threshold),
-            ("min_groundedness_threshold", min_groundedness_threshold),
-            ("min_coverage_threshold", min_coverage_threshold),
-        ]:
-            if not isinstance(th_val, (int, float)) or not math.isfinite(th_val) or th_val < 0.0 or th_val > 1.0:
-                raise TrustEngineError(f"{th_name} must be a float bounded in [0.0, 1.0], got {th_val}.")
+        from backend.app.trust.config import TrustConfig, TrustConfigError
 
-        if not isinstance(min_evidence_count, int) or min_evidence_count < 1:
-            raise TrustEngineError(f"min_evidence_count must be an integer >= 1, got {min_evidence_count}.")
+        cfg = config if config is not None else TrustConfig()
 
-        self.min_confidence_threshold = float(min_confidence_threshold)
-        self.min_groundedness_threshold = float(min_groundedness_threshold)
-        self.min_coverage_threshold = float(min_coverage_threshold)
-        self.min_evidence_count = min_evidence_count
-        self.require_valid_provenance = bool(require_valid_provenance)
+        c_min_conf = min_confidence_threshold if min_confidence_threshold is not None else cfg.min_confidence_threshold
+        c_min_ground = min_groundedness_threshold if min_groundedness_threshold is not None else cfg.min_groundedness_threshold
+        c_min_cov = min_coverage_threshold if min_coverage_threshold is not None else cfg.min_coverage_threshold
+        c_min_ev = min_evidence_count if min_evidence_count is not None else cfg.min_evidence_count
+        c_req_prov = require_valid_provenance if require_valid_provenance is not None else cfg.require_valid_provenance
 
-        self.weight_relevance = float(weight_relevance)
-        self.weight_coverage = float(weight_coverage)
-        self.weight_provenance = float(weight_provenance)
+        c_w_rel = weight_relevance if weight_relevance is not None else cfg.weight_relevance
+        c_w_cov = weight_coverage if weight_coverage is not None else cfg.weight_coverage
+        c_w_prov = weight_provenance if weight_provenance is not None else cfg.weight_provenance
 
-        self.weight_confidence_groundedness = float(weight_confidence_groundedness)
-        self.weight_confidence_top_relevance = float(weight_confidence_top_relevance)
-        self.weight_confidence_coverage = float(weight_confidence_coverage)
-        self.weight_confidence_volume = float(weight_confidence_volume)
+        c_w_c_g = weight_confidence_groundedness if weight_confidence_groundedness is not None else cfg.weight_confidence_groundedness
+        c_w_c_t = weight_confidence_top_relevance if weight_confidence_top_relevance is not None else cfg.weight_confidence_top_relevance
+        c_w_c_c = weight_confidence_coverage if weight_confidence_coverage is not None else cfg.weight_confidence_coverage
+        c_w_c_v = weight_confidence_volume if weight_confidence_volume is not None else cfg.weight_confidence_volume
+
+        try:
+            # Instantiate validated TrustConfig to ensure constraints
+            self.config = TrustConfig(
+                min_confidence_threshold=c_min_conf,
+                min_groundedness_threshold=c_min_ground,
+                min_coverage_threshold=c_min_cov,
+                min_evidence_count=c_min_ev,
+                require_valid_provenance=c_req_prov,
+                weight_relevance=c_w_rel,
+                weight_coverage=c_w_cov,
+                weight_provenance=c_w_prov,
+                weight_confidence_groundedness=c_w_c_g,
+                weight_confidence_top_relevance=c_w_c_t,
+                weight_confidence_coverage=c_w_c_c,
+                weight_confidence_volume=c_w_c_v,
+            )
+        except TrustConfigError as exc:
+            raise TrustEngineError(str(exc)) from exc
+
+        self.min_confidence_threshold = self.config.min_confidence_threshold
+        self.min_groundedness_threshold = self.config.min_groundedness_threshold
+        self.min_coverage_threshold = self.config.min_coverage_threshold
+        self.min_evidence_count = self.config.min_evidence_count
+        self.require_valid_provenance = self.config.require_valid_provenance
+
+        self.weight_relevance = self.config.weight_relevance
+        self.weight_coverage = self.config.weight_coverage
+        self.weight_provenance = self.config.weight_provenance
+
+        self.weight_confidence_groundedness = self.config.weight_confidence_groundedness
+        self.weight_confidence_top_relevance = self.config.weight_confidence_top_relevance
+        self.weight_confidence_coverage = self.config.weight_confidence_coverage
+        self.weight_confidence_volume = self.config.weight_confidence_volume
 
     def evaluate(
         self,
