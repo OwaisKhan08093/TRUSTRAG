@@ -99,6 +99,8 @@ class GroundedGenerator:
                 f"assessment must be an instance of TrustAssessment, got {type(assessment).__name__}."
             )
 
+        model_name = self.llm.model_name if isinstance(getattr(self.llm, "model_name", None), str) else self.config.model_name
+
         # 1. HARD TRUST GATE: If evidence is not SUPPORTED, ABSTAIN WITHOUT CALLING LLM
         if assessment.decision != TrustDecision.SUPPORTED:
             logger.info(
@@ -110,7 +112,7 @@ class GroundedGenerator:
             return GenerationResult(
                 query=stripped_query,
                 answer=self.abstention_message,
-                model_name=self.llm.model_name,
+                model_name=model_name,
                 evidence_ids=[],
                 is_refusal=True,
                 refusal_reason=(

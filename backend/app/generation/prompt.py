@@ -112,6 +112,7 @@ def build_grounded_prompt(
     query: str,
     evidence: Sequence[Union[TrustEvidence, RerankedChunk, Dict[str, Any]]],
     system_instruction: Optional[str] = None,
+    max_prompt_chars: Optional[int] = None,
 ) -> GroundedPrompt:
     """Build a deterministic evidence-grounded prompt for local LLM generation.
 
@@ -119,6 +120,7 @@ def build_grounded_prompt(
         query: User search query string.
         evidence: Sequence of verified trusted evidence items.
         system_instruction: Optional override for system directive.
+        max_prompt_chars: Optional maximum character ceiling for safety truncation.
 
     Returns:
         GroundedPrompt instance containing structured prompt components.
@@ -136,6 +138,9 @@ def build_grounded_prompt(
 
     sys_instruction = system_instruction or DEFAULT_SYSTEM_INSTRUCTION
     evidence_text, chunk_ids = format_evidence_block(evidence)
+
+    if max_prompt_chars is not None and len(evidence_text) > max_prompt_chars:
+        evidence_text = evidence_text[:max_prompt_chars] + "\n[... truncated for context limits ...]"
 
     user_prompt = (
         f"SUPPLIED EVIDENCE:\n"
