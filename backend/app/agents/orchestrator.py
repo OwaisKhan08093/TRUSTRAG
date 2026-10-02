@@ -10,6 +10,8 @@ from backend.app.agents.citation_agent import CitationAgent, CitationAgentResult
 from backend.app.agents.evidence_agent import EvidenceAgent, EvidenceAgentResult
 from backend.app.agents.generation_agent import GenerationAgent, GenerationAgentResult
 from backend.app.agents.retrieval_agent import RetrievalAgent, RetrievalAgentResult
+from backend.app.agents.state import AgentState, PipelineStatus
+from backend.app.agents.trace import AgentEventStatus, ExecutionTrace
 from backend.app.agents.trust_agent import TrustAgent, TrustAgentResult
 from backend.app.generation.citations import Citation
 from backend.app.generation.generator import STANDARD_ABSTENTION_MESSAGE
@@ -41,6 +43,8 @@ class OrchestratorResult:
         generation_result: Optional output from GenerationAgent.
         citation_result: Optional output from CitationAgent.
         grounded_answer: Optional complete assembled GroundedAnswer.
+        state: Optional AgentState snapshot.
+        trace: Optional ExecutionTrace capturing agent event lineage.
         latency_seconds: Total pipeline execution duration.
         metadata: Pipeline diagnostic metadata.
     """
@@ -62,6 +66,8 @@ class OrchestratorResult:
     generation_result: Optional[GenerationAgentResult] = None
     citation_result: Optional[CitationAgentResult] = None
     grounded_answer: Optional[GroundedAnswer] = None
+    state: Optional[AgentState] = None
+    trace: Optional[ExecutionTrace] = None
     latency_seconds: float = 0.0
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -85,6 +91,8 @@ class OrchestratorResult:
             "generation_result": self.generation_result.to_dict() if self.generation_result else None,
             "citation_result": self.citation_result.to_dict() if self.citation_result else None,
             "grounded_answer": self.grounded_answer.to_dict() if self.grounded_answer else None,
+            "state": self.state.to_dict() if self.state else None,
+            "trace": self.trace.to_dict() if self.trace else None,
             "latency_seconds": self.latency_seconds,
             "metadata": dict(self.metadata),
         }
@@ -149,8 +157,9 @@ class TrustRAGOrchestrator(BaseAgent):
         max_new_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         filter_cited_only: bool = True,
+        session_id: Optional[str] = None,
     ) -> OrchestratorResult:
-        """Execute the full multi-agent pipeline for a user query.
+        """Execute the full multi-agent pipeline for a user query with state and trace tracking.
 
         Args:
             query: User query string.
@@ -159,9 +168,10 @@ class TrustRAGOrchestrator(BaseAgent):
             max_new_tokens: Token generation budget.
             temperature: Generation temperature.
             filter_cited_only: Whether citation block contains only cited references.
+            session_id: Optional session identifier for state tracking.
 
         Returns:
-            OrchestratorResult containing full execution details and final response.
+            OrchestratorResult containing full execution details, state, and trace.
 
         Raises:
             AgentInputError: If query is invalid.
@@ -176,39 +186,110 @@ class TrustRAGOrchestrator(BaseAgent):
         if not stripped_query:
             raise AgentInputError("query cannot be empty or whitespace only.")
 
+        # Initialize State & Trace
+        state = AgentState(query=stripped_query, session_id=session_id)
+        trace = ExecutionTrace(query=stripped_query)
+        state.mark_in_progress()
+
         # Step 1: RetrievalAgent
+        t0 = time.perf_counter()
         try:
             retrieval_res = self.retrieval_agent.execute(
                 query=stripped_query,
                 top_k=retrieval_top_k,
             )
+            lat = time.perf_counter() - t0
+            state.retrieval_result = retrieval_res
+            trace.record_event(
+                agent_name="RetrievalAgent",
+                status=AgentEventStatus.COMPLETED,
+                latency_seconds=lat,
+                output_summary={"candidate_count": retrieval_res.candidate_count},
+            )
         except Exception as exc:
+            trace.record_event(
+                agent_name="RetrievalAgent",
+                status=AgentEventStatus.FAILED,
+                reason=str(exc),
+            )
+            state.mark_failed(str(exc))
+            trace.finish()
             raise AgentExecutionError(f"RetrievalAgent failed: {exc}") from exc
 
         # Step 2: EvidenceAgent
+        t0 = time.perf_counter()
         try:
             evidence_res = self.evidence_agent.execute(
                 query=stripped_query,
                 candidates=retrieval_res.results,
                 top_k=evidence_top_k,
             )
+            lat = time.perf_counter() - t0
+            state.evidence_result = evidence_res
+            trace.record_event(
+                agent_name="EvidenceAgent",
+                status=AgentEventStatus.COMPLETED,
+                latency_seconds=lat,
+                output_summary={"evidence_count": evidence_res.evidence_count},
+            )
         except Exception as exc:
+            trace.record_event(
+                agent_name="EvidenceAgent",
+                status=AgentEventStatus.FAILED,
+                reason=str(exc),
+            )
+            state.mark_failed(str(exc))
+            trace.finish()
             raise AgentExecutionError(f"EvidenceAgent failed: {exc}") from exc
 
         # Step 3: TrustAgent Gating
+        t0 = time.perf_counter()
         try:
             trust_res = self.trust_agent.execute(
                 query=stripped_query,
                 evidence=evidence_res.evidence,
             )
+            lat = time.perf_counter() - t0
+            state.trust_result = trust_res
+            trace.record_event(
+                agent_name="TrustAgent",
+                status=AgentEventStatus.COMPLETED,
+                latency_seconds=lat,
+                output_summary={
+                    "decision": trust_res.decision.value,
+                    "confidence_score": trust_res.confidence_score,
+                    "groundedness_score": trust_res.groundedness_score,
+                },
+            )
         except Exception as exc:
+            trace.record_event(
+                agent_name="TrustAgent",
+                status=AgentEventStatus.FAILED,
+                reason=str(exc),
+            )
+            state.mark_failed(str(exc))
+            trace.finish()
             raise AgentExecutionError(f"TrustAgent failed: {exc}") from exc
 
         # Step 4: Gating Decision Check
         if not trust_res.is_supported:
-            # INSUFFICIENT_EVIDENCE -> STOP: Do NOT call GenerationAgent LLM or CitationAgent
+            # Explicitly record SKIPPED events for downstream agents in trace
+            trace.record_event(
+                agent_name="GenerationAgent",
+                status=AgentEventStatus.SKIPPED,
+                reason="Gated by TrustEngine: INSUFFICIENT_EVIDENCE",
+            )
+            trace.record_event(
+                agent_name="CitationAgent",
+                status=AgentEventStatus.SKIPPED,
+                reason="Gated by TrustEngine: INSUFFICIENT_EVIDENCE",
+            )
+
             elapsed = time.perf_counter() - start_time
             refusal_formatted = f"**[Status: {trust_res.decision.value}]**\n\n{self.abstention_message}"
+            state.mark_completed(final_answer=self.abstention_message, is_refusal=True)
+            trace.finish()
+
             return OrchestratorResult(
                 query=stripped_query,
                 answer=self.abstention_message,
@@ -227,6 +308,8 @@ class TrustRAGOrchestrator(BaseAgent):
                 generation_result=None,
                 citation_result=None,
                 grounded_answer=None,
+                state=state,
+                trace=trace,
                 latency_seconds=elapsed,
                 metadata={
                     "gating_status": "GATED_REFUSAL",
@@ -235,6 +318,7 @@ class TrustRAGOrchestrator(BaseAgent):
             )
 
         # Step 5: GenerationAgent (Only for SUPPORTED)
+        t0 = time.perf_counter()
         try:
             gen_res = self.generation_agent.execute(
                 query=stripped_query,
@@ -243,10 +327,26 @@ class TrustRAGOrchestrator(BaseAgent):
                 max_new_tokens=max_new_tokens,
                 temperature=temperature,
             )
+            lat = time.perf_counter() - t0
+            state.generation_result = gen_res
+            trace.record_event(
+                agent_name="GenerationAgent",
+                status=AgentEventStatus.COMPLETED,
+                latency_seconds=lat,
+                output_summary={"is_refusal": gen_res.is_refusal},
+            )
         except Exception as exc:
+            trace.record_event(
+                agent_name="GenerationAgent",
+                status=AgentEventStatus.FAILED,
+                reason=str(exc),
+            )
+            state.mark_failed(str(exc))
+            trace.finish()
             raise AgentExecutionError(f"GenerationAgent failed: {exc}") from exc
 
         # Step 6: CitationAgent
+        t0 = time.perf_counter()
         try:
             citation_res = self.citation_agent.execute(
                 query=stripped_query,
@@ -256,7 +356,23 @@ class TrustRAGOrchestrator(BaseAgent):
                 generation_result=gen_res.generation_result,
                 filter_cited_only=filter_cited_only,
             )
+            lat = time.perf_counter() - t0
+            state.citation_result = citation_res
+            state.grounded_answer = citation_res.grounded_answer
+            trace.record_event(
+                agent_name="CitationAgent",
+                status=AgentEventStatus.COMPLETED,
+                latency_seconds=lat,
+                output_summary={"citation_count": citation_res.citation_count},
+            )
         except Exception as exc:
+            trace.record_event(
+                agent_name="CitationAgent",
+                status=AgentEventStatus.FAILED,
+                reason=str(exc),
+            )
+            state.mark_failed(str(exc))
+            trace.finish()
             raise AgentExecutionError(f"CitationAgent failed: {exc}") from exc
 
         elapsed = time.perf_counter() - start_time
@@ -269,6 +385,9 @@ class TrustRAGOrchestrator(BaseAgent):
                 else gen_res.answer_text
             )
         )
+
+        state.mark_completed(final_answer=gen_res.answer_text, is_refusal=gen_res.is_refusal)
+        trace.finish()
 
         return OrchestratorResult(
             query=stripped_query,
@@ -288,6 +407,8 @@ class TrustRAGOrchestrator(BaseAgent):
             generation_result=gen_res,
             citation_result=citation_res,
             grounded_answer=citation_res.grounded_answer,
+            state=state,
+            trace=trace,
             latency_seconds=elapsed,
             metadata={
                 "gating_status": "SUPPORTED_AND_GENERATED",
