@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.api.errors import register_error_handlers
+from backend.app.api.lifecycle import app_lifespan
 from backend.app.api.routes.health import router as health_router
 from backend.app.api.routes.query import router as query_router
 
@@ -37,6 +38,7 @@ def create_app(
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_url="/openapi.json",
+        lifespan=app_lifespan,
     )
 
     # Configure permissive CORS for API clients
