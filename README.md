@@ -6,7 +6,7 @@ TrustRAG is a solo-developed Confidence-Aware Retrieval-Augmented Generation (RA
 
 ## Current Status
 
-**Phase 4 — Neural Cross-Encoder Reranking Engine is COMPLETE.**
+**Phase 5 — Trust Engine & Evidence Grounding is COMPLETE.**
 
 * [x] **Phase 0 & 1**: Document ingestion (PyMuPDF), legal cleaning, sliding-window chunking, metadata persistence.
 * [x] **Phase 2**: Dense semantic vector retrieval engine:
@@ -32,61 +32,114 @@ TrustRAG is a solo-developed Confidence-Aware Retrieval-Augmented Generation (RA
   * [x] `RerankerConfig` + `validate_reranker_config`: Strict configuration models and bounds validation.
   * [x] Benchmark evaluation script (`scripts/evaluate_reranking.py`) with Hit@1, Hit@3, Hit@5, and MRR metrics.
   * [x] End-to-end integration and edge case coverage.
+* [x] **Phase 5**: Trust Engine & Evidence Grounding Subsystem:
+  * [x] `TrustEvidence`: Strongly-typed evidence model preserving chunk ID, document provenance, page ranges, retrieval rank, retrieval score, and neural rerank score.
+  * [x] `aggregate_evidence_relevance`: Deterministic relevance aggregation mapping cross-encoder logits to calibrated sigmoid probabilities with rank discounting.
+  * [x] `calculate_evidence_coverage`: Transparent lexical query term coverage measurement tracking covered vs uncovered terms.
+  * [x] `validate_evidence_provenance`: Provenance integrity verification checking for missing metadata, invalid page ranges, duplicate chunk IDs, and empty texts.
+  * [x] `calculate_groundedness`: Multi-signal composite groundedness score synthesized from relevance, coverage, and provenance validity.
+  * [x] `calculate_confidence`: System confidence index derived from groundedness, top-1 relevance strength, query coverage, volume sufficiency, and provenance.
+  * [x] `TrustEngine` & `TrustAssessment`: Core decision engine outputting deterministic trust decisions (`SUPPORTED` vs `INSUFFICIENT_EVIDENCE`) with full explainability.
+  * [x] `TrustConfig`: Centralized configuration managing thresholds and weights with strict boundary validation.
+  * [x] Evaluation harness (`scripts/evaluate_trust.py`) and end-to-end integration tests (`backend/tests/test_trust_integration.py`).
 
 ---
 
 ## Architecture
 
 ```text
-                           User Query
-                               │
-                ┌──────────────┴──────────────┐
-                ▼                             ▼
-         Dense Retrieval               Sparse Retrieval
-     (SentenceTransformers)              (BM25Okapi)
-              +                               +
-            FAISS                        Token Index
-                │                             │
-                └──────────────┬──────────────┘
-                               ▼
-                        Reciprocal Rank
-                          Fusion (RRF)
-                               │
-                               ▼
-                     Candidate Evidence Pool
-                         (candidate_k)
-                               │
-                               ▼
-                     Cross-Encoder Reranker
-                 (ms-marco-MiniLM-L-6-v2)
-                               │
-                               ▼
-                       Re-ranked Evidence
-                           (final_k)
+                                USER QUERY
+                                    │
+                     ┌──────────────┴──────────────┐
+                     ▼                             ▼
+              Dense Retrieval               Sparse Retrieval
+          (SentenceTransformers)              (BM25Okapi)
+                   +                               +
+                 FAISS                        Token Index
+                     │                             │
+                     └──────────────┬──────────────┘
+                                    ▼
+                             Reciprocal Rank
+                               Fusion (RRF)
+                                    │
+                                    ▼
+                         Candidate Evidence Pool
+                                    │
+                                    ▼
+                          Cross-Encoder Reranker
+                      (ms-marco-MiniLM-L-6-v2)
+                                    │
+                                    ▼
+                             Ranked Evidence
+                                    │
+              ┌─────────────────────┼─────────────────────┐
+              ▼                     ▼                     ▼
+          Relevance              Coverage             Provenance
+         Aggregation            Measurement           Validation
+              │                     │                     │
+              └─────────────────────┼─────────────────────┘
+                                    ▼
+                               Groundedness
+                                    │
+                                    ▼
+                                Confidence
+                                    │
+                                    ▼
+                               TrustEngine
+                                    │
+                      ┌─────────────┴─────────────┐
+                      ▼                           ▼
+                  SUPPORTED              INSUFFICIENT_EVIDENCE
 ```
-
-### Retrieval & Reranking Paradigm Comparison
-
-| Subsystem | Paradigm | Implementation | Purpose |
-|---|---|---|---|
-| **Dense Path** | Bi-encoder semantic similarity | `SentenceTransformers` + `FAISS` | Fast retrieval capturing contextual meaning, synonyms, and semantic paraphrasing. |
-| **Sparse Path** | Lexical / keyword matching | `rank_bm25` (`BM25Okapi`) | Fast retrieval capturing exact keyword hits, section numbers, acronyms, and terminology. |
-| **Fusion Layer** | Multi-retriever combination | Reciprocal Rank Fusion (`RRF`) | Merges heterogeneous score distributions without manual score calibration. |
-| **Cross-Encoder Reranker** | Full cross-attention joint scoring | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Deep query-document token interaction for high-precision final ranking of candidates. |
-
-$$\text{RRF Score}(d) = \sum_{r \in \text{retrievers}} \frac{1}{k + \text{rank}(r, d)}$$
 
 ---
 
-## Important Architectural Notes & Boundaries
+## Subsystem Functionality Overview
 
-> [!WARNING]
-> * **Cross-encoder reranking does NOT generate answers.**
-> * **Cross-encoder reranking does NOT prove factual correctness.**
-> * **Cross-encoder reranking does NOT synthesize text or prevent hallucinations.**
-> * **Cross-encoder reranking does NOT replace verification, citations, or confidence scoring.**
->
-> Reranking solely provides re-ordered, high-precision candidate passages as grounded evidence for downstream generation, citation, and verification layers.
+### What TrustRAG Currently Does:
+1. **Document Processing**: Ingests, normalizes, and splits PDF documents into semantically coherent overlapping chunks.
+2. **Dense Semantic Retrieval**: Embeds chunks and performs nearest-neighbor vector search in FAISS.
+3. **Sparse Lexical Retrieval**: Indexes chunks and performs BM25 keyword searches with stopword tokenization.
+4. **Hybrid Rank Fusion**: Fuses diverse retrieval rankings using Reciprocal Rank Fusion ($k=60$).
+5. **Neural Cross-Encoder Reranking**: Re-scores top hybrid candidates using deep query-passage cross-attention (`ms-marco-MiniLM-L-6-v2`).
+6. **Evidence Quality Validation**: Enforces strongly typed schemas, finite numerical bounds, and non-empty metadata across evidence items.
+7. **Provenance Integrity Checking**: Validates 1-based page numbers, monotonic page ranges, non-empty identifiers, and absence of duplicates.
+8. **Deterministic Evidence Grounding**: Measures lexical query term coverage and sigmoid-calibrated neural relevance.
+9. **Confidence Index Estimation**: Computes bounded $[0.0, 1.0]$ confidence index based on evidence groundedness, top-1 neural relevance, query term coverage, and volume sufficiency.
+10. **Trust Decision Making**: Emits auditable discrete verdicts (`SUPPORTED` vs `INSUFFICIENT_EVIDENCE`) before answer synthesis.
+
+### What TrustRAG Does NOT Do Yet:
+* **LLM Answer Generation**: No generative LLM (Ollama / vLLM / OpenAI) is integrated yet.
+* **Final Natural Language Citations**: Citation markers in generated prose are not yet synthesized.
+* **Abstention Response Synthesis**: Abstention responses are handled at the structured decision level, not via natural language generation.
+* **Agent Orchestration**: Multi-step query planning and tool-calling agents are planned for subsequent phases.
+* **REST API & Web UI**: FastAPI routes and interactive frontend interfaces will be implemented in subsequent phases.
+
+---
+
+## Trust Scoring Methodology
+
+The Trust Engine operates purely as a deterministic heuristic evaluation layer:
+
+1. **Relevance Aggregation ($R$)**:
+   $$\text{prob}_i = \text{sigmoid}(s_i) = \frac{1}{1 + e^{-s_i}}$$
+   $$R = \frac{\sum_{i=0}^{N-1} \text{prob}_i \cdot \gamma^i}{\sum_{i=0}^{N-1} \gamma^i}, \quad \gamma = 0.5$$
+
+2. **Lexical Term Coverage ($C$)**:
+   $$C = \frac{|\text{Query Terms} \cap \text{Evidence Tokens}|}{|\text{Query Terms}|}$$
+
+3. **Provenance Validity ($P$)**:
+   $$P = \frac{\text{Valid Chunks Count}}{\text{Total Chunks Count}} \in [0.0, 1.0]$$
+
+4. **Groundedness Score ($G$)**:
+   $$G = w_r \cdot R + w_c \cdot C + w_p \cdot P \quad (w_r=0.55, w_c=0.35, w_p=0.10)$$
+
+5. **Confidence Index**:
+   $$\text{Confidence} = (w_g \cdot G + w_t \cdot \text{prob}_0 + w_c \cdot C + w_v \cdot S_{\text{volume}}) \times P$$
+   where $S_{\text{volume}} = \min(1.0, N / N_{\text{min}})$.
+
+6. **Trust Decision**:
+   $$\text{Decision} = \begin{cases} \text{SUPPORTED} & \text{if } G \ge \theta_G, \; \text{Conf} \ge \theta_{\text{Conf}}, \; C \ge \theta_C, \; P = 1.0, \; N \ge N_{\text{min}} \\ \text{INSUFFICIENT\_EVIDENCE} & \text{otherwise} \end{cases}$$
 
 ---
 
@@ -148,7 +201,13 @@ Run comparative benchmark evaluation evaluating reranking precision:
 .venv\Scripts\python scripts/evaluate_reranking.py
 ```
 
-### 6. Run Full Test Suite
+### 6. Evaluate Trust Engine Grounding & Decisions
+Run the Trust Engine development evaluation dataset:
+```bash
+.venv\Scripts\python scripts/evaluate_trust.py
+```
+
+### 7. Run Full Test Suite
 Execute all unit, component, and integration tests:
 ```bash
 .venv\Scripts\pytest
@@ -158,59 +217,44 @@ Execute all unit, component, and integration tests:
 
 ## Python API Usage
 
-### End-to-End Reranking Pipeline
+### End-to-End Retrieval, Reranking, and Trust Decision
 
 ```python
 from backend.app.reranking import RerankingPipeline
+from backend.app.trust import TrustEngine, TrustEvidence, TrustDecision
 
-# Initialize end-to-end pipeline (HybridRetriever + CrossEncoder)
-pipeline = RerankingPipeline(
-    default_candidate_k=5,
-    default_final_k=3,
-    default_batch_size=16,
-    model_name="cross-encoder/ms-marco-MiniLM-L-6-v2",
-)
+# 1. Initialize Reranking Pipeline and Trust Engine
+pipeline = RerankingPipeline(default_candidate_k=5, default_final_k=3)
+engine = TrustEngine()
 
-results = pipeline.retrieve(
-    query="What are the grounds for processing personal data and obligations of notice?",
-    top_k=3,
-    candidate_k=5,
-)
+query = "What are the obligations of a Data Fiduciary before collecting personal data?"
 
-for item in results:
-    print(f"Final Rank: {item.final_rank} (was Hybrid Rank: {item.original_rank})")
-    print(f"Rerank Score: {item.rerank_score:.4f} | Original Score: {item.original_score:.4f}")
-    print(f"Doc: {item.document_name} | Pages: {item.page_start}-{item.page_end}")
-    print(f"Text: {item.text[:120]}...\n")
-```
+# 2. Retrieve and Rerank Evidence
+reranked_chunks = pipeline.retrieve(query, top_k=3, candidate_k=5)
+evidence = [TrustEvidence.from_reranked_chunk(c) for c in reranked_chunks]
 
-### Standalone Component Usage
+# 3. Evaluate Grounding and Issue Trust Decision
+assessment = engine.evaluate(query, evidence)
 
-```python
-from backend.app.retrieval import HybridRetriever, VectorRetriever, BM25Retriever
-from backend.app.reranking import ResultReranker, CrossEncoderReranker
+print(f"Query: {assessment.query}")
+print(f"Decision: {assessment.decision.value}")
+print(f"Groundedness Score: {assessment.groundedness_score:.3f}")
+print(f"Confidence Score: {assessment.confidence_score:.3f}")
+print(f"Coverage Ratio: {assessment.coverage_score:.3f}")
+print(f"Provenance Valid: {assessment.provenance_valid}")
+print(f"Reasons: {assessment.decision_reasons}")
 
-# 1. Hybrid Retrieval (Dense + Sparse + RRF)
-hybrid_retriever = HybridRetriever()
-candidates = hybrid_retriever.retrieve(
-    query="obligations of data fiduciary",
-    top_k=5,
-)
-
-# 2. Standalone Neural Reranking
-reranker = ResultReranker()
-reranked = reranker.rerank(
-    query="obligations of data fiduciary",
-    results=candidates,
-    top_k=3,
-)
+if assessment.decision == TrustDecision.SUPPORTED:
+    print("-> Evidence is strongly grounded. Safe to proceed to generation.")
+else:
+    print("-> Insufficient evidence. Abstain from generation to prevent hallucination.")
 ```
 
 ---
 
 ## Configuration Reference
 
-Key constants configured in `backend/app/config.py`:
+Key constants configured in `backend/app/config.py` and `backend/app/trust/config.py`:
 
 * `DEFAULT_CHUNK_SIZE_WORDS`: Target chunk size (600 words).
 * `DEFAULT_CHUNK_OVERLAP_WORDS`: Overlap window (120 words).
@@ -224,7 +268,11 @@ Key constants configured in `backend/app/config.py`:
 * `DEFAULT_RERANKER_TOP_K`: Default final reranked passages (3).
 * `DEFAULT_RERANKER_CANDIDATE_K`: Default candidate pool size for reranker (5).
 * `DEFAULT_RERANKER_BATCH_SIZE`: Default inference batch size (16).
-* `MAX_RERANKER_TOP_K`: Maximum allowed top-K limit (20).
+* `TrustConfig.min_confidence_threshold`: Minimum confidence required for `SUPPORTED` (0.50).
+* `TrustConfig.min_groundedness_threshold`: Minimum groundedness required for `SUPPORTED` (0.45).
+* `TrustConfig.min_coverage_threshold`: Minimum lexical term coverage required for `SUPPORTED` (0.30).
+* `TrustConfig.min_evidence_count`: Minimum required supporting evidence chunks (1).
+* `TrustConfig.require_valid_provenance`: Mandatory provenance validity check (`True`).
 
 ---
 
@@ -240,12 +288,10 @@ Key constants configured in `backend/app/config.py`:
 
 ## Out of Scope (Planned for Subsequent Phases)
 
-The following components are **NOT** implemented in Phase 4 and will be developed in future phases:
+The following components are **NOT** implemented in Phase 5 and will be developed in future phases:
 * Local LLM Inference (Ollama / vLLM)
 * Answer Generation Engine
-* Exact Citation & Provenance Generator
-* Confidence Scoring Engine
-* Answer Fidelity & Groundedness Evaluator
-* Abstention Logic & Safety Fallbacks
+* Exact Citation & In-text Provenance Generator
+* Abstention Natural Language Response Generator
 * Multi-Agent Orchestration
 * FastAPI Backend & Interactive UI
