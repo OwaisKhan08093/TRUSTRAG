@@ -32,3 +32,12 @@ Thumbs.db
 # Models
 models/*
 !models/.gitkeep
+
+# Node / Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+.env.local
+.env.*.local
+
