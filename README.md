@@ -6,7 +6,7 @@ TrustRAG is a solo-developed Confidence-Aware Retrieval-Augmented Generation (RA
 
 ## Current Status
 
-**Phase 6 — Grounded LLM Answer Generation + Citations is COMPLETE.**
+**Phase 7 — Multi-Agent TrustRAG Orchestration is COMPLETE.**
 
 * [x] **Phase 0 & 1**: Document ingestion (PyMuPDF), legal cleaning, sliding-window chunking, metadata persistence.
 * [x] **Phase 2**: Dense semantic vector retrieval engine:
@@ -51,65 +51,75 @@ TrustRAG is a solo-developed Confidence-Aware Retrieval-Augmented Generation (RA
   * [x] `GroundedAnswer` & `assemble_grounded_answer`: Final response container combining generated prose, citation markers, and preserved trust metrics.
   * [x] Generation safeguards & parameter validation (`test_generation_safeguards.py`).
   * [x] Development evaluation harness (`scripts/evaluate_generation.py`) and end-to-end integration test suite (`backend/tests/test_generation_integration.py`).
+* [x] **Phase 7**: Multi-Agent TrustRAG Orchestration:
+  * [x] `BaseAgent` & `AgentResult`: Typed foundation base class and standardized execution wrappers with runtime latency tracking.
+  * [x] `RetrievalAgent`: Specialized hybrid dense (FAISS) + sparse (BM25) search coordinator.
+  * [x] `EvidenceAgent`: Neural cross-encoder evidence reranking and relevance filtering coordinator.
+  * [x] `TrustAgent`: Deterministic multi-signal trust gating coordinator issuing `SUPPORTED` vs `INSUFFICIENT_EVIDENCE` decisions.
+  * [x] `GenerationAgent`: Grounded answer generator strictly abstaining from LLM execution on insufficient evidence.
+  * [x] `CitationAgent`: Provenance validation and structured citation formatting agent.
+  * [x] `TrustRAGOrchestrator`: Master coordinator executing deterministic linear pipeline with trust safeguards.
+  * [x] `AgentState` & `ExecutionTrace`: Full state tracking and event lineage with explicit `SKIPPED` markers on refusal paths.
+  * [x] Multi-agent evaluation suite (`scripts/evaluate_agents.py`) verifying all 5 core scenarios.
 
 ---
 
-## Architecture
+## Architecture & Orchestration Pipeline
 
 ```text
-                                USER QUERY
-                                    │
-                     ┌──────────────┴──────────────┐
-                     ▼                             ▼
-              Dense Retrieval               Sparse Retrieval
-          (SentenceTransformers)              (BM25Okapi)
-                   +                               +
-                 FAISS                        Token Index
-                     │                             │
-                     └──────────────┬──────────────┘
-                                    ▼
-                             Reciprocal Rank
-                               Fusion (RRF)
-                                    │
-                                    ▼
-                         Candidate Evidence Pool
-                                    │
-                                    ▼
-                          Cross-Encoder Reranker
-                      (ms-marco-MiniLM-L-6-v2)
-                                    │
-                                    ▼
-                             Ranked Evidence
-                                    │
-              ┌─────────────────────┼─────────────────────┐
-              ▼                     ▼                     ▼
-          Relevance              Coverage             Provenance
-         Aggregation            Measurement           Validation
-              │                     │                     │
-              └─────────────────────┼─────────────────────┘
-                                    ▼
-                               Groundedness
-                                    │
-                                    ▼
-                                Confidence
-                                    │
-                                    ▼
-                               TrustEngine
-                                    │
-                      ┌─────────────┴─────────────┐
-                      ▼                           ▼
-                  SUPPORTED              INSUFFICIENT_EVIDENCE
-                      │                           │
-                      ▼                           ▼
-              GroundedGenerator              NO LLM CALL
-            (Qwen2.5-3B-Instruct)         (Structured Refusal)
-                      │
-                      ▼
-               GroundedAnswer
-                      │
-                      ▼
-             Citation References
+                                  USER QUERY
+                                      │
+                                      ▼
+                               RetrievalAgent
+                        (FAISS + BM25Okapi + RRF)
+                                      │
+                                      ▼
+                                EvidenceAgent
+                        (Neural Cross-Encoder Rerank)
+                                      │
+                                      ▼
+                                 TrustAgent
+                   (Multi-Signal TrustEngine Verification)
+                                      │
+                      ┌───────────────┴───────────────┐
+                      ▼                               ▼
+                  SUPPORTED                 INSUFFICIENT_EVIDENCE
+                      │                               │
+                      ▼                               ▼
+               GenerationAgent                   STOP / REFUSAL
+             (Local LLM Qwen2.5)             (GenerationAgent SKIPPED)
+                      │                      (CitationAgent SKIPPED)
+                      ▼                               │
+                CitationAgent                         │
+             (Verified Provenance)                    │
+                      │                               │
+                      └───────────────┬───────────────┘
+                                      ▼
+                           FINAL ORCHESTRATED RESULT
 ```
+
+---
+
+## Multi-Agent Subsystem Details
+
+### Specialized Agents
+
+| Agent | Responsibility | Subsystem Reused |
+|---|---|---|
+| **`RetrievalAgent`** | Dense vector search + BM25 keyword search with RRF fusion | `HybridRetriever` |
+| **`EvidenceAgent`** | Neural cross-encoder joint query-document cross-attention scoring | `ResultReranker` |
+| **`TrustAgent`** | Deterministic evidence grounding, relevance, coverage, and provenance verification | `TrustEngine` |
+| **`GenerationAgent`** | Evidence-constrained generation with strict refusal safeguards | `GroundedGenerator` |
+| **`CitationAgent`** | Provenance verification and Markdown reference compilation | `Citation` / `GroundedAnswer` |
+| **`TrustRAGOrchestrator`** | Master pipeline coordinator enforcing gating and event lineage | Full Agent Suite |
+
+### Trust Safeguard Invariant
+When `TrustAgent` determines evidence is `INSUFFICIENT_EVIDENCE`:
+1. The pipeline terminates downstream synthesis immediately.
+2. `GenerationAgent` is **NEVER** called with the LLM.
+3. `CitationAgent` is **SKIPPED**.
+4. The structured `ExecutionTrace` records `GenerationAgent: SKIPPED` and `CitationAgent: SKIPPED`.
+5. A structured transparent refusal notification is returned.
 
 ---
 
@@ -126,10 +136,11 @@ TrustRAG is a solo-developed Confidence-Aware Retrieval-Augmented Generation (RA
 8. **Hard Trust Gating**: Emits discrete verdicts (`SUPPORTED` vs `INSUFFICIENT_EVIDENCE`).
 9. **Constrained LLM Generation**: Prompts `Qwen/Qwen2.5-3B-Instruct` using only verified evidence passages. If evidence is `INSUFFICIENT_EVIDENCE`, the LLM is **never called** and an abstention response is returned.
 10. **Provenance-Derived Citations**: Builds citation references directly mapped to source document pages (e.g. `[1] DPDP_Act_2023.pdf, page 5`).
+11. **Multi-Agent Orchestration**: End-to-end specialized agents with complete `AgentState` management and observable `ExecutionTrace`.
 
 ### What TrustRAG Does NOT Do Yet:
-* **Multi-Agent Orchestration**: Query decomposition and multi-agent coordination will be developed in future phases.
 * **REST API & Web UI**: FastAPI endpoints and web frontend interfaces are reserved for subsequent phases.
+* **Autonomous Multi-Turn Loops**: Agents follow deterministic, predictable directed acyclic pipeline flow rather than uncontrolled autonomous loops.
 
 ---
 
@@ -145,6 +156,8 @@ TrustRAG is a solo-developed Confidence-Aware Retrieval-Augmented Generation (RA
 ## Hardware & Model Details
 
 * **LLM**: `Qwen/Qwen2.5-3B-Instruct` (Hugging Face Transformers, local inference only).
+* **Cross-Encoder**: `cross-encoder/ms-marco-MiniLM-L-6-v2`.
+* **Embedding Model**: `sentence-transformers/all-MiniLM-L6-v2`.
 * **RAM / Memory Conscious**: Weights are loaded lazily upon first generation request; unit tests utilize stubs and mocks to maintain sub-second execution without downloading multi-gigabyte models.
 * **Decoding**: Greedy decoding (`temperature=0.0`) by default to maximize deterministic, factual grounding.
 
@@ -213,7 +226,12 @@ TrustRAG is a solo-developed Confidence-Aware Retrieval-Augmented Generation (RA
 .venv\Scripts\python scripts/evaluate_generation.py
 ```
 
-### 8. Run Full Test Suite
+### 8. Evaluate Multi-Agent Orchestration
+```bash
+.venv\Scripts\python scripts/evaluate_agents.py
+```
+
+### 9. Run Full Test Suite
 ```bash
 .venv\Scripts\pytest
 ```
@@ -222,36 +240,27 @@ TrustRAG is a solo-developed Confidence-Aware Retrieval-Augmented Generation (RA
 
 ## Python API Usage
 
-### End-to-End Grounded Answer Generation
+### End-to-End Multi-Agent Orchestration
 
 ```python
-from backend.app.reranking import RerankingPipeline
-from backend.app.trust import TrustEngine, TrustEvidence, TrustDecision
-from backend.app.generation import GroundedGenerator, assemble_grounded_answer
+from backend.app.agents import TrustRAGOrchestrator, TrustDecision
 
-# 1. Initialize Pipeline Components
-pipeline = RerankingPipeline(default_candidate_k=5, default_final_k=3)
-engine = TrustEngine()
-generator = GroundedGenerator()
+# 1. Initialize Master Orchestrator
+orchestrator = TrustRAGOrchestrator()
 
 query = "What notice must a Data Fiduciary give to a Data Principal before collecting personal data?"
 
-# 2. Retrieve and Rerank Evidence
-reranked_chunks = pipeline.retrieve(query, top_k=3, candidate_k=5)
-evidence = [TrustEvidence.from_reranked_chunk(c) for c in reranked_chunks]
+# 2. Execute Full Multi-Agent Pipeline
+result = orchestrator.execute(query)
 
-# 3. Evaluate Grounding Gate
-assessment = engine.evaluate(query, evidence)
+# 3. Inspect Response and Execution Trace
+print(result.formatted_response)
+print(f"Decision: {result.decision.value}")
+print(f"Confidence Score: {result.confidence_score:.3f}")
+print(f"Latency: {result.latency_seconds:.3f}s")
 
-# 4. Generate Answer (Gated)
-gen_result = generator.generate(query, evidence, assessment)
-
-# 5. Assemble Final Answer with Citations
-grounded_answer = assemble_grounded_answer(gen_result, assessment, evidence)
-
-print(grounded_answer.formatted_response)
-print(f"Trust Decision: {grounded_answer.trust_decision.value}")
-print(f"Confidence Score: {grounded_answer.confidence_score:.3f}")
+if result.trace:
+    print(result.trace.format_trace_summary())
 ```
 
 ---
@@ -274,7 +283,7 @@ Key configuration constants:
 
 ## Out of Scope (Planned for Subsequent Phases)
 
-* Multi-agent query decomposition and planning
-* FastAPI backend REST service
+* FastAPI backend REST service (Phase 8)
 * React frontend user interface
-* Deployment and authentication
+* Authentication and multi-user sessions
+* Cloud APIs and remote deployment
