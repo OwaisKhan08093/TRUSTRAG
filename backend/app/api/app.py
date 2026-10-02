@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.app.api.errors import register_error_handlers
 from backend.app.api.routes.health import router as health_router
 from backend.app.api.routes.query import router as query_router
 
@@ -46,6 +47,9 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Register centralized exception handlers
+    register_error_handlers(app)
 
     # Register Routers
     app.include_router(health_router)
