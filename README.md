@@ -6,9 +6,18 @@ TrustRAG is a solo-developed Confidence-Aware Retrieval-Augmented Generation (RA
 
 ## Current Status
 
-**Phase 8 — FastAPI Backend + API Integration is COMPLETE.**
+**Phase 9 — React Frontend + Full-System Integration is COMPLETE.**
 
 * [x] **Phase 0 & 1**: Document ingestion (PyMuPDF), legal cleaning, sliding-window chunking, metadata persistence.
+* [x] **Phase 2**: Dense semantic vector retrieval engine (FAISS + SentenceTransformers).
+* [x] **Phase 3**: Hybrid Retrieval Subsystem (BM25 + FAISS + Reciprocal Rank Fusion).
+* [x] **Phase 4**: Neural Cross-Encoder Reranking Subsystem (`cross-encoder/ms-marco-MiniLM-L-6-v2`).
+* [x] **Phase 5**: Trust Engine & Evidence Grounding Subsystem (Deterministic trust gating).
+* [x] **Phase 6**: Grounded LLM Answer Generation & Citations (`Qwen/Qwen2.5-3B-Instruct`).
+* [x] **Phase 7**: Multi-Agent TrustRAG Orchestration (5 specialized pipeline agents).
+* [x] **Phase 8**: FastAPI Backend Subsystem (`GET /health`, `POST /query`).
+* [x] **Phase 9**: React Frontend + Full-System Integration (React + Vite + TypeScript UI).
+
 * [x] **Phase 2**: Dense semantic vector retrieval engine:
   * [x] SentenceTransformer embedding model wrapper (`sentence-transformers/all-MiniLM-L6-v2`, 384 dimensions).
   * [x] Document chunk embedding generation with L2 normalization.
@@ -260,79 +269,139 @@ When `TrustAgent` determines evidence is `INSUFFICIENT_EVIDENCE`:
    cd TRUSTRAG
    ```
 
-2. Create and activate a Python 3.11 virtual environment:
-   ```bash
-   # Windows
-   py -3.11 -m venv .venv
-   .venv\Scripts\activate
+## Full-System Architecture & Workflow
 
-   # Linux / macOS
-   python3 -m venv .venv
-   source .venv/bin/activate
-   ```
-
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Launch the FastAPI Server**:
-   ```bash
-   .venv\Scripts\uvicorn backend.app.api.app:app --host 0.0.0.0 --port 8000 --reload
-   ```
+```text
+                    USER
+                     │
+                     ▼
+             ┌────────────────┐
+             │ React Frontend │ (Vite + TypeScript + Modern Dark UI)
+             └───────┬────────┘
+                     │
+                HTTP / JSON (POST /query, GET /health)
+                     │
+                     ▼
+             ┌────────────────┐
+             │    FastAPI     │ (Pydantic Validation + Lifespan DI)
+             └───────┬────────┘
+                     │
+                     ▼
+              TrustRAG Master Orchestrator
+                     │
+     ┌───────────────┼───────────────┬───────────────┐
+     ▼               ▼               ▼               ▼
+RetrievalAgent  EvidenceAgent    TrustAgent    GenerationAgent ──► CitationAgent
+(FAISS + BM25)  (Cross-Encoder)  (TrustEngine) (Qwen2.5-3B)       (Provenance Citations)
+                                     │
+                             [INSUFFICIENT_EVIDENCE]
+                                     │
+                                     ▼
+                            DETERMINISTIC REFUSAL
+```
 
 ---
 
-## Usage & Evaluation Commands
+## Frontend Architecture
 
-### 1. Ingest PDF Document
+The TrustRAG web interface is built using a clean React 19 + TypeScript architecture:
+
+* **Header (`Header.tsx`)**: Displays system branding and real-time FastAPI backend connectivity status via polling `/health`.
+* **Query Interface (`QueryInput.tsx`)**: High-performance natural language query textarea with keyboard shortcuts (`Enter`), quick-select sample prompts, disabled submit prevention, and reset controls.
+* **Pipeline Visualization (`PipelineVisualization.tsx`)**: Visual telemetry mapping the 5-agent pipeline (`RETRIEVE` &rarr; `EVIDENCE` &rarr; `TRUST` &rarr; `GENERATE` &rarr; `CITE`) reflecting actual agent trace latencies and gating status.
+* **Deterministic Trust Decision UI (`TrustDecision.tsx`)**: Explicitly displays backend TrustEngine outputs including decision state (`SUPPORTED` vs `INSUFFICIENT_EVIDENCE`), composite confidence, groundedness, cross-encoder relevance, lexical coverage, and provenance validity.
+* **Grounded Answer & Citation View (`AnswerView.tsx`)**: Renders factual prose with interactive citation markers (`[1]`, `[2]`), copy-to-clipboard, structured refusal notices, and supporting citation references.
+* **Evidence & Trace Panel (`EvidencePanel.tsx`)**: Collapsible chunk provenance viewer displaying source document names, page ranges, chunk IDs, and full extracted text snippets alongside agent execution timelines.
+* **API Service (`api.ts`) & Hook (`useTrustRag.ts`)**: Centralized HTTP client managing API communication, structured error handling (`ApiError`, `NetworkError`), and loading states.
+
+---
+
+## Installation & Running the Full Stack
+
+### 1. Backend Setup
+
 ```bash
-.venv\Scripts\python scripts/ingest.py data/raw/DPDP_Act_2023.pdf
+# Clone the repository
+git clone https://github.com/OwaisKhan08093/TRUSTRAG.git
+cd TRUSTRAG
+
+# Activate virtual environment
+.venv\Scripts\activate  # Windows
+# or: source .venv/bin/activate  # Linux/macOS
+
+# Install backend dependencies
+pip install -r requirements.txt
+
+# Start FastAPI backend server (port 8000)
+.venv\Scripts\uvicorn backend.app.api.app:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-### 2. Generate Document Embeddings
+### 2. Frontend Setup
+
 ```bash
-.venv\Scripts\python scripts/embed_chunks.py
+cd frontend
+
+# Install dependencies
+npm install
+
+# Start Vite React development server (port 5173)
+npm run dev
 ```
 
-### 3. Build FAISS Vector Index
-```bash
-.venv\Scripts\python scripts/build_faiss_index.py
-```
+The frontend application will be live at `http://localhost:5173`.
 
-### 4. Evaluate Retrieval Performance
-```bash
-.venv\Scripts\python scripts/evaluate_retrieval.py
-```
+---
 
-### 5. Evaluate Neural Reranking Performance
-```bash
-.venv\Scripts\python scripts/evaluate_reranking.py
-```
+## Environment Variables
 
-### 6. Evaluate Trust Engine Grounding
-```bash
-.venv\Scripts\python scripts/evaluate_trust.py
-```
+| Variable | Location | Default | Description |
+|---|---|---|---|
+| `VITE_API_BASE_URL` | `frontend/.env` | `http://127.0.0.1:8000` | Base URL for FastAPI backend endpoints |
 
-### 7. Evaluate Grounded Generation & Citations
-```bash
-.venv\Scripts\python scripts/evaluate_generation.py
-```
+---
 
-### 8. Evaluate Multi-Agent Orchestration
-```bash
-.venv\Scripts\python scripts/evaluate_agents.py
-```
+## Example Queries & Expected Responses
 
-### 9. Evaluate FastAPI Backend Endpoints
-```bash
-.venv\Scripts\python scripts/evaluate_api.py
-```
+### Example 1: Grounded Factual Query (Supported)
 
-### 10. Run Full Test Suite
+* **Query**: `"What is personal data under the DPDP Act 2023?"`
+* **Trust Decision**: `SUPPORTED`
+* **Confidence**: `> 90%`
+* **Answer**: Factual generated prose describing personal data with explicit citation markers (`[1]`).
+* **Citations**: Source reference pointing to `DPDP_Act_2023.pdf`, Page 2.
+
+### Example 2: Out-of-Domain Query (Deterministic Refusal)
+
+* **Query**: `"Who is the current President of Mars?"`
+* **Trust Decision**: `INSUFFICIENT_EVIDENCE`
+* **Confidence**: `< 15%`
+* **Answer**: `TrustRAG could not verify the answer from the available evidence.`
+* **Pipeline Behavior**: `GenerationAgent` and `CitationAgent` are deterministic skipped to prevent hallucinations.
+
+---
+
+## Automated Test Suites
+
+Run all test suites across the full stack:
+
+### Backend Test Suite (Pytest)
 ```bash
 .venv\Scripts\pytest
+```
+* **Result**: 351 / 351 tests passing.
+
+### Frontend Test Suite (Vitest)
+```bash
+cd frontend
+npm test
+```
+* **Result**: 15 / 15 tests passing across API client, components, and integration suites.
+
+### Total Automated Tests
+```text
+Backend tests: 351 / 351
+Frontend tests: 15 / 15
+Total automated tests: 366 / 366
 ```
 
 ---
@@ -355,6 +424,6 @@ Key configuration constants:
 
 ## Out of Scope (Planned for Subsequent Phases)
 
-* React frontend web user interface
 * Authentication and multi-user accounts
 * Cloud APIs and remote deployment
+
