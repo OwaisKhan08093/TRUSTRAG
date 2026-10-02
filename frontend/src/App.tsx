@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Header } from './components/Header';
+import { QueryInput } from './components/QueryInput';
 import type { HealthResponse } from './types/trustrag';
-
 
 export function App() {
   const [health] = useState<HealthResponse | null>({
@@ -11,19 +11,40 @@ export function App() {
     pipeline_ready: true,
   });
   const [isOnline] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [submittedQuery, setSubmittedQuery] = useState<string>('');
+
+  const handleQuerySubmit = (query: string) => {
+    setSubmittedQuery(query);
+    setIsLoading(true);
+    // Placeholder response simulation for interface testing
+    setTimeout(() => {
+      setIsLoading(false);
+    }, 800);
+  };
+
+  const handleReset = () => {
+    setSubmittedQuery('');
+    setIsLoading(false);
+  };
 
   return (
     <div className="app-container">
       <Header health={health} isBackendOnline={isOnline} />
       <main className="main-grid">
-        <section className="glass-card">
-          <h2 style={{ fontSize: '1.25rem', marginBottom: '0.5rem', color: 'var(--text-primary)' }}>
-            Welcome to TrustRAG
-          </h2>
-          <p style={{ color: 'var(--text-secondary)' }}>
-            Confidence-Aware Grounded RAG with Multi-Agent Verification and Deterministic Trust Gating.
-          </p>
-        </section>
+        <QueryInput
+          onSubmit={handleQuerySubmit}
+          onReset={handleReset}
+          isLoading={isLoading}
+        />
+        {submittedQuery && (
+          <section className="glass-card">
+            <h3 style={{ fontSize: '1rem', color: 'var(--text-secondary)' }}>Current Query:</h3>
+            <p style={{ marginTop: '0.25rem', color: 'var(--text-primary)', fontWeight: 500 }}>
+              {submittedQuery}
+            </p>
+          </section>
+        )}
       </main>
       <footer className="footer">
         TrustRAG System &bull; Retrieval &bull; Verification &bull; Trust Gating &bull; Grounded Generation &bull; Provenance Citations
@@ -33,3 +54,4 @@ export function App() {
 }
 
 export default App;
+
