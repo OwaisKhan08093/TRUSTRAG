@@ -5,6 +5,8 @@ from typing import Any, Dict, Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.app.api.routes.health import router as health_router
+
 logger = logging.getLogger(__name__)
 
 
@@ -44,8 +46,11 @@ def create_app(
         allow_headers=["*"],
     )
 
+    # Register Routers
+    app.include_router(health_router)
+
     return app
 
 
-# Default singleton instance for standard ASGI servers (e.g. uvicorn backend.app.api.app:app)
+# Default singleton instance for standard ASGI servers
 app = create_app()
