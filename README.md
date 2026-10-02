@@ -6,7 +6,7 @@ TrustRAG is a solo-developed Confidence-Aware Retrieval-Augmented Generation (RA
 
 ## Current Status
 
-**Phase 7 — Multi-Agent TrustRAG Orchestration is COMPLETE.**
+**Phase 8 — FastAPI Backend + API Integration is COMPLETE.**
 
 * [x] **Phase 0 & 1**: Document ingestion (PyMuPDF), legal cleaning, sliding-window chunking, metadata persistence.
 * [x] **Phase 2**: Dense semantic vector retrieval engine:
@@ -61,17 +61,38 @@ TrustRAG is a solo-developed Confidence-Aware Retrieval-Augmented Generation (RA
   * [x] `TrustRAGOrchestrator`: Master coordinator executing deterministic linear pipeline with trust safeguards.
   * [x] `AgentState` & `ExecutionTrace`: Full state tracking and event lineage with explicit `SKIPPED` markers on refusal paths.
   * [x] Multi-agent evaluation suite (`scripts/evaluate_agents.py`) verifying all 5 core scenarios.
+* [x] **Phase 8**: FastAPI Backend & API Integration:
+  * [x] FastAPI application factory (`create_app`) and CORS middleware.
+  * [x] Service health check endpoint (`GET /health`).
+  * [x] Pydantic typed request & response models (`QueryRequest`, `QueryResponse`, `CitationItem`, `TrustMetrics`, `TraceEventItem`).
+  * [x] Grounded query execution endpoint (`POST /query`).
+  * [x] Centralized error handlers with structured JSON envelopes (`errors.py`).
+  * [x] Dependency injection (`dependencies.py`) and lifespan management (`lifecycle.py`) maintaining lazy model loading.
+  * [x] Comprehensive API integration test suite (`test_api_integration.py`).
+  * [x] Development API evaluation harness (`scripts/evaluate_api.py`).
 
 ---
 
-## Architecture & Orchestration Pipeline
+## Architecture & API Pipeline
 
 ```text
-                                  USER QUERY
+                                CLIENT REQUEST
+                                      │
+                                      ▼
+                                ┌───────────┐
+                                │  FastAPI  │
+                                └─────┬─────┘
+                                      │
+                                      ▼
+                             Request Validation
+                                (QueryRequest)
+                                      │
+                                      ▼
+                            TrustRAG Orchestrator
                                       │
                                       ▼
                                RetrievalAgent
-                        (FAISS + BM25Okapi + RRF)
+                         (FAISS + BM25Okapi + RRF)
                                       │
                                       ▼
                                 EvidenceAgent
@@ -95,31 +116,98 @@ TrustRAG is a solo-developed Confidence-Aware Retrieval-Augmented Generation (RA
                       │                               │
                       └───────────────┬───────────────┘
                                       ▼
-                           FINAL ORCHESTRATED RESULT
+                                QueryResponse
+                                (HTTP JSON)
 ```
 
 ---
 
-## Multi-Agent Subsystem Details
+## API Endpoints Reference
 
-### Specialized Agents
+### 1. Service Health Check
+* **Method**: `GET`
+* **Path**: `/health`
+* **Description**: Returns service health status and version without initializing heavy ML models.
+* **Response**:
+  ```json
+  {
+    "status": "ok",
+    "service": "trustrag",
+    "version": "1.0.0"
+  }
+  ```
 
-| Agent | Responsibility | Subsystem Reused |
-|---|---|---|
-| **`RetrievalAgent`** | Dense vector search + BM25 keyword search with RRF fusion | `HybridRetriever` |
-| **`EvidenceAgent`** | Neural cross-encoder joint query-document cross-attention scoring | `ResultReranker` |
-| **`TrustAgent`** | Deterministic evidence grounding, relevance, coverage, and provenance verification | `TrustEngine` |
-| **`GenerationAgent`** | Evidence-constrained generation with strict refusal safeguards | `GroundedGenerator` |
-| **`CitationAgent`** | Provenance verification and Markdown reference compilation | `Citation` / `GroundedAnswer` |
-| **`TrustRAGOrchestrator`** | Master pipeline coordinator enforcing gating and event lineage | Full Agent Suite |
+### 2. Execute Grounded Query
+* **Method**: `POST`
+* **Path**: `/query`
+* **Description**: Submits a user question to the multi-agent TrustRAG pipeline.
+* **Request Body** (`QueryRequest`):
+  ```json
+  {
+    "query": "What notice must a Data Fiduciary give under Section 5?",
+    "retrieval_top_k": 5,
+    "evidence_top_k": 3,
+    "max_new_tokens": 512,
+    "temperature": 0.0,
+    "filter_cited_only": true,
+    "session_id": "optional-session-id"
+  }
+  ```
+* **Response Body** (`QueryResponse`):
+  ```json
+  {
+    "query": "What notice must a Data Fiduciary give under Section 5?",
+    "answer": "A Data Fiduciary must give notice prior to consent [1].",
+    "decision": "SUPPORTED",
+    "is_refusal": false,
+    "citations": [
+      {
+        "index": 1,
+        "chunk_id": "chunk_sec05_01",
+        "document_id": "doc_dpdp_act",
+        "document_name": "DPDP_Act_2023.pdf",
+        "page_start": 5,
+        "page_end": 5,
+        "text_snippet": "Section 5: Every Data Fiduciary shall give notice...",
+        "formatted_reference": "[1] DPDP_Act_2023.pdf, page 5"
+      }
+    ],
+    "formatted_response": "A Data Fiduciary must give notice prior to consent [1].\n\n### References\n- **[1] DPDP_Act_2023.pdf, page 5**",
+    "trust_metrics": {
+      "confidence_score": 0.92,
+      "groundedness_score": 0.90,
+      "relevance_score": 0.95,
+      "coverage_score": 1.0,
+      "provenance_valid": true
+    },
+    "latency_seconds": 0.082,
+    "trace_events": [
+      {"agent_name": "RetrievalAgent", "status": "COMPLETED", "latency_seconds": 0.015, "reason": null},
+      {"agent_name": "EvidenceAgent", "status": "COMPLETED", "latency_seconds": 0.021, "reason": null},
+      {"agent_name": "TrustAgent", "status": "COMPLETED", "latency_seconds": 0.005, "reason": null},
+      {"agent_name": "GenerationAgent", "status": "COMPLETED", "latency_seconds": 0.038, "reason": null},
+      {"agent_name": "CitationAgent", "status": "COMPLETED", "latency_seconds": 0.003, "reason": null}
+    ],
+    "metadata": {
+      "gating_status": "SUPPORTED_AND_GENERATED"
+    }
+  }
+  ```
 
-### Trust Safeguard Invariant
+### 3. Interactive Documentation
+* **Swagger UI**: `http://localhost:8000/docs`
+* **ReDoc UI**: `http://localhost:8000/redoc`
+* **OpenAPI JSON Schema**: `http://localhost:8000/openapi.json`
+
+---
+
+## Trust Safeguard Invariant
 When `TrustAgent` determines evidence is `INSUFFICIENT_EVIDENCE`:
 1. The pipeline terminates downstream synthesis immediately.
 2. `GenerationAgent` is **NEVER** called with the LLM.
 3. `CitationAgent` is **SKIPPED**.
 4. The structured `ExecutionTrace` records `GenerationAgent: SKIPPED` and `CitationAgent: SKIPPED`.
-5. A structured transparent refusal notification is returned.
+5. The API returns `decision: "INSUFFICIENT_EVIDENCE"`, `is_refusal: true`, and empty citations `citations: []`.
 
 ---
 
@@ -137,10 +225,11 @@ When `TrustAgent` determines evidence is `INSUFFICIENT_EVIDENCE`:
 9. **Constrained LLM Generation**: Prompts `Qwen/Qwen2.5-3B-Instruct` using only verified evidence passages. If evidence is `INSUFFICIENT_EVIDENCE`, the LLM is **never called** and an abstention response is returned.
 10. **Provenance-Derived Citations**: Builds citation references directly mapped to source document pages (e.g. `[1] DPDP_Act_2023.pdf, page 5`).
 11. **Multi-Agent Orchestration**: End-to-end specialized agents with complete `AgentState` management and observable `ExecutionTrace`.
+12. **Production FastAPI Backend**: Async REST API with typed Pydantic models, centralized error handling, and dependency injection.
 
 ### What TrustRAG Does NOT Do Yet:
-* **REST API & Web UI**: FastAPI endpoints and web frontend interfaces are reserved for subsequent phases.
-* **Autonomous Multi-Turn Loops**: Agents follow deterministic, predictable directed acyclic pipeline flow rather than uncontrolled autonomous loops.
+* **React Web Frontend UI**: User interface development is reserved for future phases.
+* **Authentication / Multi-Tenancy**: API keys and token-based authentication are planned for deployment phases.
 
 ---
 
@@ -163,7 +252,7 @@ When `TrustAgent` determines evidence is `INSUFFICIENT_EVIDENCE`:
 
 ---
 
-## Installation
+## Installation & Running the API
 
 1. Clone the repository:
    ```bash
@@ -187,9 +276,14 @@ When `TrustAgent` determines evidence is `INSUFFICIENT_EVIDENCE`:
    pip install -r requirements.txt
    ```
 
+4. **Launch the FastAPI Server**:
+   ```bash
+   .venv\Scripts\uvicorn backend.app.api.app:app --host 0.0.0.0 --port 8000 --reload
+   ```
+
 ---
 
-## Usage & Commands
+## Usage & Evaluation Commands
 
 ### 1. Ingest PDF Document
 ```bash
@@ -231,36 +325,14 @@ When `TrustAgent` determines evidence is `INSUFFICIENT_EVIDENCE`:
 .venv\Scripts\python scripts/evaluate_agents.py
 ```
 
-### 9. Run Full Test Suite
+### 9. Evaluate FastAPI Backend Endpoints
 ```bash
-.venv\Scripts\pytest
+.venv\Scripts\python scripts/evaluate_api.py
 ```
 
----
-
-## Python API Usage
-
-### End-to-End Multi-Agent Orchestration
-
-```python
-from backend.app.agents import TrustRAGOrchestrator, TrustDecision
-
-# 1. Initialize Master Orchestrator
-orchestrator = TrustRAGOrchestrator()
-
-query = "What notice must a Data Fiduciary give to a Data Principal before collecting personal data?"
-
-# 2. Execute Full Multi-Agent Pipeline
-result = orchestrator.execute(query)
-
-# 3. Inspect Response and Execution Trace
-print(result.formatted_response)
-print(f"Decision: {result.decision.value}")
-print(f"Confidence Score: {result.confidence_score:.3f}")
-print(f"Latency: {result.latency_seconds:.3f}s")
-
-if result.trace:
-    print(result.trace.format_trace_summary())
+### 10. Run Full Test Suite
+```bash
+.venv\Scripts\pytest
 ```
 
 ---
@@ -283,7 +355,6 @@ Key configuration constants:
 
 ## Out of Scope (Planned for Subsequent Phases)
 
-* FastAPI backend REST service (Phase 8)
-* React frontend user interface
-* Authentication and multi-user sessions
+* React frontend web user interface
+* Authentication and multi-user accounts
 * Cloud APIs and remote deployment
