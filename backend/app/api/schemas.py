@@ -123,3 +123,34 @@ class QueryResponse(BaseModel):
     latency_seconds: float = Field(default=0.0)
     trace_events: List[TraceEventItem] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class DocumentUploadResponse(BaseModel):
+    """Structured response for document upload and ingestion."""
+
+    document_id: str = Field(..., description="Unique document identifier.")
+    filename: str = Field(..., description="Sanitized document filename.")
+    status: str = Field(default="ready", description="Processing status (ready, failed).")
+    chunks_created: int = Field(..., description="Number of text chunks created from this document.")
+    total_chunks_indexed: int = Field(default=0, description="Total chunks currently indexed across all documents.")
+    message: str = Field(..., description="User-facing status message.")
+
+
+class DocumentInfo(BaseModel):
+    """Metadata summary of an ingested document."""
+
+    document_id: str = Field(..., description="Document identifier.")
+    document_name: str = Field(..., description="Document filename.")
+    chunks_count: int = Field(..., description="Number of chunks associated with this document.")
+    pages_count: int = Field(..., description="Number of pages spanned by this document.")
+    total_words: int = Field(..., description="Total word count across all document chunks.")
+    status: str = Field(default="ready", description="Document status.")
+
+
+class DocumentListResponse(BaseModel):
+    """List response of all indexed documents."""
+
+    documents: List[DocumentInfo] = Field(default_factory=list, description="List of ingested documents.")
+    total_documents: int = Field(..., description="Total count of ingested documents.")
+    total_chunks: int = Field(..., description="Total count of indexed chunks.")
+

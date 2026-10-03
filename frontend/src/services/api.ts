@@ -6,6 +6,8 @@ import type {
   QueryRequest,
   QueryResponse,
   HealthResponse,
+  DocumentUploadResponse,
+  DocumentListResponse,
 } from '../types/trustrag';
 
 export class ApiError extends Error {
@@ -121,7 +123,72 @@ export class TrustRagApiClient {
       body: JSON.stringify(requestData),
     });
   }
+
+  /**
+   * Document upload endpoint: POST /documents (multipart/form-data)
+   */
+  public async uploadDocument(file: File): Promise<DocumentUploadResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const url = `${this.baseUrl}/documents`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 120000); // 120s for ingestion/embedding
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal,
+        headers: {
+          Accept: 'application/json',
+          // Note: browser automatically sets multipart/form-data boundary
+        },
+      });
+
+      clearTimeout(timer);
+      const text = await response.text();
+      let payload: unknown;
+      if (text) {
+        try {
+          payload = JSON.parse(text);
+        } catch {
+          throw new ApiError(`Malformed response from upload: ${text}`, response.status);
+        }
+      }
+
+      if (!response.ok) {
+        const errorDetail =
+          payload && typeof payload === 'object' && 'detail' in payload
+            ? String((payload as { detail: unknown }).detail)
+            : `Document upload failed with status ${response.status}`;
+        throw new ApiError(errorDetail, response.status, payload);
+      }
+
+      return payload as DocumentUploadResponse;
+    } catch (err: unknown) {
+      clearTimeout(timer);
+      if (err instanceof ApiError) throw err;
+      if (err instanceof Error) {
+        if (err.name === 'AbortError') {
+          throw new NetworkError('Document upload & ingestion timed out');
+        }
+        throw new NetworkError(err.message || 'Unable to upload document');
+      }
+      throw new NetworkError('Unknown upload error');
+    }
+  }
+
+  /**
+   * Document catalog endpoint: GET /documents
+   */
+  public async listDocuments(): Promise<DocumentListResponse> {
+    return this.request<DocumentListResponse>('/documents', {
+      method: 'GET',
+    }, 10000);
+  }
 }
 
 // Export singleton instance for standard use
 export const apiClient = new TrustRagApiClient();
+

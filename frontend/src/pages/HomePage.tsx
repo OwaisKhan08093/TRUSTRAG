@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { DocumentUpload } from '../components/DocumentUpload';
 import { QueryInput } from '../components/QueryInput';
 import { StatusMessage } from '../components/StatusMessage';
 import { PipelineVisualization } from '../components/PipelineVisualization';
@@ -18,6 +19,11 @@ export const HomePage: React.FC<HomePageProps> = ({ trustRag }) => {
     response,
     errorMessage,
     currentStepMessage,
+    documents,
+    isUploading,
+    uploadSuccessMessage,
+    uploadErrorMessage,
+    uploadDocument,
     submitQuery,
     reset,
   } = trustRag;
@@ -37,6 +43,15 @@ export const HomePage: React.FC<HomePageProps> = ({ trustRag }) => {
 
   return (
     <div className="main-grid" data-testid="home-page">
+      {/* Document Ingestion & Catalog Section */}
+      <DocumentUpload
+        documents={documents}
+        isUploading={isUploading}
+        uploadSuccessMessage={uploadSuccessMessage}
+        uploadErrorMessage={uploadErrorMessage}
+        onUpload={uploadDocument}
+      />
+
       {/* Query Input Box */}
       <QueryInput
         onSubmit={(query) => submitQuery(query)}

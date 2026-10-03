@@ -1,28 +1,29 @@
 """Configuration settings for TrustRAG."""
 
+import os
 from pathlib import Path
 
-# Base Paths (relative to workspace root)
+# Base Paths (relative to workspace root or environment override)
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DATA_DIR = BASE_DIR / "data"
-RAW_DATA_DIR = DATA_DIR / "raw"
-PROCESSED_DATA_DIR = DATA_DIR / "processed"
+DATA_DIR = Path(os.getenv("TRUSTRAG_DATA_DIR", str(BASE_DIR / "data")))
+RAW_DATA_DIR = Path(os.getenv("TRUSTRAG_RAW_DATA_DIR", str(DATA_DIR / "raw")))
+PROCESSED_DATA_DIR = Path(os.getenv("TRUSTRAG_PROCESSED_DATA_DIR", str(DATA_DIR / "processed")))
 CHUNKS_OUTPUT_FILE = PROCESSED_DATA_DIR / "chunks.json"
 
 # Ingestion & Chunking Defaults
-DEFAULT_CHUNK_SIZE_WORDS = 600       # Target chunk size: 500-800 words
-DEFAULT_CHUNK_OVERLAP_WORDS = 120    # Target chunk overlap: 100-150 words
-MIN_CHUNK_SIZE_WORDS = 20            # Minimum words to form a valid chunk
+DEFAULT_CHUNK_SIZE_WORDS = int(os.getenv("CHUNK_SIZE_WORDS", "600"))       # Target chunk size: 500-800 words
+DEFAULT_CHUNK_OVERLAP_WORDS = int(os.getenv("CHUNK_OVERLAP_WORDS", "120")) # Target chunk overlap: 100-150 words
+MIN_CHUNK_SIZE_WORDS = int(os.getenv("MIN_CHUNK_SIZE_WORDS", "20"))        # Minimum words to form a valid chunk
 
 # Embedding Defaults
-DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-DEFAULT_EMBEDDING_BATCH_SIZE = 32
+DEFAULT_EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+DEFAULT_EMBEDDING_BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", "32"))
 EMBEDDINGS_OUTPUT_FILE = PROCESSED_DATA_DIR / "embeddings.npy"
 EMBEDDING_METADATA_FILE = PROCESSED_DATA_DIR / "embedding_metadata.json"
 
 # Retrieval Defaults
 FAISS_INDEX_FILE = PROCESSED_DATA_DIR / "index.faiss"
-DEFAULT_TOP_K = 5
+DEFAULT_TOP_K = int(os.getenv("DEFAULT_TOP_K", "5"))
 MAX_TOP_K = 20
 DEFAULT_SIMILARITY_THRESHOLD = 0.0
 

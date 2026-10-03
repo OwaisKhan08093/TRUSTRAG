@@ -66,3 +66,28 @@ export type QueryStatus =
   | 'INSUFFICIENT_EVIDENCE'
   | 'API_ERROR'
   | 'NETWORK_ERROR';
+
+export interface DocumentUploadResponse {
+  document_id: string;
+  filename: string;
+  status: string;
+  chunks_created: number;
+  total_chunks_indexed: number;
+  message: string;
+}
+
+export interface DocumentInfo {
+  document_id: string;
+  document_name: string;
+  chunks_count: number;
+  pages_count: number;
+  total_words: number;
+  status: string;
+}
+
+export interface DocumentListResponse {
+  documents: DocumentInfo[];
+  total_documents: number;
+  total_chunks: number;
+}
+
