@@ -21,6 +21,7 @@ class QueryRequest(BaseModel):
         ...,
         description="User question or query string.",
         min_length=1,
+        max_length=4096,
     )
     retrieval_top_k: Optional[int] = Field(
         default=None,

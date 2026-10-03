@@ -41,14 +41,35 @@ def create_app(
         lifespan=app_lifespan,
     )
 
-    # Configure permissive CORS for API clients
+    # Configure environment-aware CORS
+    import os
+    from starlette.middleware.base import BaseHTTPMiddleware
+
+    env_origins = os.getenv("ALLOWED_ORIGINS", "*")
+    if env_origins.strip() == "*":
+        origins = ["*"]
+    else:
+        origins = [o.strip() for o in env_origins.split(",") if o.strip()]
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
+        allow_origins=origins,
+        allow_credentials=True if origins != ["*"] else False,
+        allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["*"],
     )
+
+    # Security Headers Middleware
+    class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next):
+            response = await call_next(request)
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["X-Frame-Options"] = "DENY"
+            response.headers["X-XSS-Protection"] = "1; mode=block"
+            response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+            return response
+
+    app.add_middleware(SecurityHeadersMiddleware)
 
     # Register centralized exception handlers
     register_error_handlers(app)
