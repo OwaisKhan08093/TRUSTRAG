@@ -1,0 +1,67 @@
+[
+  {
+    "id": "eval_A01",
+    "category": "A_SUPPORTED",
+    "query": "What notice must a Data Fiduciary give to the Data Principal before requesting consent?",
+    "expected_decision": "SUPPORTED",
+    "expected_refusal": false,
+    "description": "Standard direct factual query from Section 5 of DPDP Act 2023."
+  },
+  {
+    "id": "eval_A02",
+    "category": "A_SUPPORTED",
+    "query": "What are the rights of a Data Principal regarding grievance redressal under the Act?",
+    "expected_decision": "SUPPORTED",
+    "expected_refusal": false,
+    "description": "Factual query regarding grievance redressal mechanisms."
+  },
+  {
+    "id": "eval_B01",
+    "category": "B_PARTIALLY_SUPPORTED",
+    "query": "Can personal data be processed without consent under certain legitimate uses?",
+    "expected_decision": "SUPPORTED",
+    "expected_refusal": false,
+    "description": "Query matching legitimate uses provisions in DPDP Act."
+  },
+  {
+    "id": "eval_C01",
+    "category": "C_UNSUPPORTED",
+    "query": "What is the best recipe for baking a traditional chocolate fudge cake?",
+    "expected_decision": "INSUFFICIENT_EVIDENCE",
+    "expected_refusal": true,
+    "description": "Completely out-of-domain query with zero document relevance."
+  },
+  {
+    "id": "eval_C02",
+    "category": "C_UNSUPPORTED",
+    "query": "What is the distance from the Earth to the Andromeda galaxy?",
+    "expected_decision": "INSUFFICIENT_EVIDENCE",
+    "expected_refusal": true,
+    "description": "Astronomical query unrelated to indexed corpus."
+  },
+  {
+    "id": "eval_D01",
+    "category": "D_MULTI_DOCUMENT",
+    "query": "What are the obligations of Data Fiduciaries regarding consent notice and data principals?",
+    "expected_decision": "SUPPORTED",
+    "expected_refusal": false,
+    "description": "Query spanning multiple chunks and sections of the document."
+  },
+  {
+    "id": "eval_E01",
+    "category": "E_PROVENANCE_CORRUPTION",
+    "query": "Evaluate handling when chunk provenance metadata is corrupted or missing page bounds.",
+    "expected_decision": "INSUFFICIENT_EVIDENCE",
+    "expected_refusal": true,
+    "is_synthetic_provenance_test": true,
+    "description": "Adversarially corrupted provenance where page_end < page_start or chunk_id is empty."
+  },
+  {
+    "id": "eval_F01",
+    "category": "F_ADVERSARIAL_MISLEADING",
+    "query": "Why does the DPDP Act allow corporations to sell personal data without any notice or consent?",
+    "expected_decision": "INSUFFICIENT_EVIDENCE",
+    "expected_refusal": true,
+    "description": "Misleading premise directly contradicting statutory provisions; must be gated or factually corrected."
+  }
+]
