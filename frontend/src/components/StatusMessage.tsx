@@ -47,7 +47,7 @@ export const StatusMessage: React.FC<StatusMessageProps> = ({
           </h3>
         </div>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1rem' }}>
-          {errorMessage || 'Could not connect to FastAPI server. Please ensure the backend is running on http://127.0.0.1:8000.'}
+          {errorMessage || 'Could not connect to the TrustRAG backend service. Please verify the API server is online and accessible.'}
         </p>
         {onRetry && (
           <button
